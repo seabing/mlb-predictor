@@ -16,12 +16,16 @@ def get_roster(team_code):
     if not team_id:
         return {"error": f"Team code '{team_code}' not found"}
 
-    # Get 40-man roster which includes IL players
-    url = f"{BASE_URL}/teams/{team_id}/roster?rosterType=fullRoster&hydrate=person(stats(type=season,group=hitting,season=2026))"
+    url = f"{BASE_URL}/teams/{team_id}/roster?rosterType=depthChart"
     resp = requests.get(url).json()
 
+    seen_ids = set()
     players = []
     for player in resp.get("roster", []):
+        player_id = player["person"]["id"]
+        if player_id in seen_ids:
+            continue
+        seen_ids.add(player_id)
         status_code = player.get("status", {}).get("code", "A")
         il = status_code != "A"
         players.append({
@@ -39,7 +43,6 @@ def get_roster(team_code):
         "team_id": team_id,
         "roster": players
     }
-
 
 def get_schedule(team_code, date=None):
     team_id = TEAM_IDS.get(team_code.upper())

@@ -1,9 +1,208 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>MLB Predictor</title>
-  </head>
-  <body>
-    <h1>MLB Predictor — Coming Soon</h1>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MLB Predictor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; }
+    header { background: #1a1d2e; padding: 16px 32px; display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #2a2d3e; }
+    header h1 { font-size: 1.4rem; font-weight: 700; color: #4fc3f7; }
+    select { background: #2a2d3e; color: #e0e0e0; border: 1px solid #3a3d4e; padding: 8px 12px; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
+    .container { max-width: 1100px; margin: 32px auto; padding: 0 24px; }
+    .section { background: #1a1d2e; border-radius: 10px; padding: 24px; margin-bottom: 24px; border: 1px solid #2a2d3e; }
+    .section h2 { font-size: 1rem; font-weight: 600; color: #4fc3f7; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { text-align: left; padding: 8px 12px; color: #888; font-weight: 500; border-bottom: 1px solid #2a2d3e; }
+    td { padding: 8px 12px; border-bottom: 1px solid #1e2130; }
+    tr:hover td { background: #1e2233; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+    .badge-il { background: #ff4444; color: white; }
+    .badge-active { background: #2e7d32; color: white; }
+    .badge-other { background: #555; color: white; }
+    .matchup-card { background: #12151f; border-radius: 8px; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
+    .team-side { text-align: center; flex: 1; }
+    .team-side h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+    .team-side p { font-size: 0.85rem; color: #888; }
+    .vs { font-size: 1.5rem; font-weight: 700; color: #4fc3f7; padding: 0 24px; }
+    .no-game { color: #888; font-style: italic; }
+    .loading { color: #888; font-style: italic; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; background: #2a2d3e; color: #aaa; margin-left: 8px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚾ MLB Predictor</h1>
+  <select id="teamSelect">
+    <option value="">Select a team...</option>
+    <option value="ARI">Arizona Diamondbacks</option>
+    <option value="ATL">Atlanta Braves</option>
+    <option value="BAL">Baltimore Orioles</option>
+    <option value="BOS">Boston Red Sox</option>
+    <option value="CHC">Chicago Cubs</option>
+    <option value="CWS">Chicago White Sox</option>
+    <option value="CIN">Cincinnati Reds</option>
+    <option value="CLE">Cleveland Guardians</option>
+    <option value="COL">Colorado Rockies</option>
+    <option value="DET">Detroit Tigers</option>
+    <option value="HOU">Houston Astros</option>
+    <option value="KC">Kansas City Royals</option>
+    <option value="LAA">Los Angeles Angels</option>
+    <option value="LAD">Los Angeles Dodgers</option>
+    <option value="MIA">Miami Marlins</option>
+    <option value="MIL">Milwaukee Brewers</option>
+    <option value="MIN">Minnesota Twins</option>
+    <option value="NYM">New York Mets</option>
+    <option value="NYY">New York Yankees</option>
+    <option value="OAK">Oakland Athletics</option>
+    <option value="PHI">Philadelphia Phillies</option>
+    <option value="PIT">Pittsburgh Pirates</option>
+    <option value="SD">San Diego Padres</option>
+    <option value="SF">San Francisco Giants</option>
+    <option value="SEA">Seattle Mariners</option>
+    <option value="STL">St. Louis Cardinals</option>
+    <option value="TB">Tampa Bay Rays</option>
+    <option value="TEX">Texas Rangers</option>
+    <option value="TOR">Toronto Blue Jays</option>
+    <option value="WSH">Washington Nationals</option>
+  </select>
+</header>
+
+<div class="container">
+
+  <div class="section" id="matchupSection" style="display:none">
+    <h2>Today's Matchup</h2>
+    <div id="matchupContent"></div>
+  </div>
+
+  <div class="section" id="rosterSection" style="display:none">
+    <h2>Roster — <span id="rosterTeamName"></span></h2>
+    <h3 style="font-size:0.85rem; color:#888; margin-bottom:12px; margin-top:4px;">Hitters</h3>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Name</th><th>Position</th><th>Status</th></tr>
+      </thead>
+      <tbody id="hittersBody"></tbody>
+    </table>
+    <h3 style="font-size:0.85rem; color:#888; margin:20px 0 12px;">Pitchers</h3>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Name</th><th>Status</th></tr>
+      </thead>
+      <tbody id="pitchersBody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  const API = '';
+
+  const teamNames = {
+    ARI:'Arizona Diamondbacks', ATL:'Atlanta Braves', BAL:'Baltimore Orioles',
+    BOS:'Boston Red Sox', CHC:'Chicago Cubs', CWS:'Chicago White Sox',
+    CIN:'Cincinnati Reds', CLE:'Cleveland Guardians', COL:'Colorado Rockies',
+    DET:'Detroit Tigers', HOU:'Houston Astros', KC:'Kansas City Royals',
+    LAA:'Los Angeles Angels', LAD:'Los Angeles Dodgers', MIA:'Miami Marlins',
+    MIL:'Milwaukee Brewers', MIN:'Minnesota Twins', NYM:'New York Mets',
+    NYY:'New York Yankees', OAK:'Oakland Athletics', PHI:'Philadelphia Phillies',
+    PIT:'Pittsburgh Pirates', SD:'San Diego Padres', SF:'San Francisco Giants',
+    SEA:'Seattle Mariners', STL:'St. Louis Cardinals', TB:'Tampa Bay Rays',
+    TEX:'Texas Rangers', TOR:'Toronto Blue Jays', WSH:'Washington Nationals'
+  };
+
+  document.getElementById('teamSelect').addEventListener('change', async function() {
+    const team = this.value;
+    if (!team) return;
+
+    document.getElementById('rosterSection').style.display = 'none';
+    document.getElementById('matchupSection').style.display = 'none';
+
+    loadRoster(team);
+    loadSchedule(team);
+  });
+
+  async function loadRoster(team) {
+    document.getElementById('rosterSection').style.display = 'block';
+    document.getElementById('rosterTeamName').textContent = teamNames[team] || team;
+    document.getElementById('hittersBody').innerHTML = '<tr><td colspan="4" class="loading">Loading roster...</td></tr>';
+    document.getElementById('pitchersBody').innerHTML = '';
+
+    const resp = await fetch(`${API}/roster/${team}`);
+    const data = await resp.json();
+
+    const active = data.roster.filter(p => !p.il && (p.status === 'Active'));
+    const hitters = active.filter(p => p.position_type !== 'Pitcher' && p.position_type !== 'Two-Way Player');
+    const pitchers = active.filter(p => p.position_type === 'Pitcher');
+    const ilPlayers = data.roster.filter(p => p.il);
+
+    let hitterRows = hitters.map(p => `
+      <tr>
+        <td>${p.jersey}</td>
+        <td>${p.name}</td>
+        <td>${p.position}</td>
+        <td><span class="badge badge-active">Active</span></td>
+      </tr>`).join('');
+
+    ilPlayers.filter(p => p.position_type !== 'Pitcher').forEach(p => {
+      hitterRows += `<tr>
+        <td>${p.jersey}</td>
+        <td>${p.name}</td>
+        <td>${p.position}</td>
+        <td><span class="badge badge-il">${p.status}</span></td>
+      </tr>`;
+    });
+
+    let pitcherRows = pitchers.map(p => `
+      <tr>
+        <td>${p.jersey}</td>
+        <td>${p.name}</td>
+        <td><span class="badge badge-active">Active</span></td>
+      </tr>`).join('');
+
+    ilPlayers.filter(p => p.position_type === 'Pitcher').forEach(p => {
+      pitcherRows += `<tr>
+        <td>${p.jersey}</td>
+        <td>${p.name}</td>
+        <td><span class="badge badge-il">${p.status}</span></td>
+      </tr>`;
+    });
+
+    document.getElementById('hittersBody').innerHTML = hitterRows || '<tr><td colspan="4">No hitters found</td></tr>';
+    document.getElementById('pitchersBody').innerHTML = pitcherRows || '<tr><td colspan="3">No pitchers found</td></tr>';
+  }
+
+  async function loadSchedule(team) {
+    document.getElementById('matchupSection').style.display = 'block';
+    document.getElementById('matchupContent').innerHTML = '<p class="loading">Loading schedule...</p>';
+
+    const resp = await fetch(`${API}/schedule/${team}`);
+    const data = await resp.json();
+
+    if (!data.games || data.games.length === 0) {
+      document.getElementById('matchupContent').innerHTML = '<p class="no-game">No game scheduled today.</p>';
+      return;
+    }
+
+    const game = data.games[0];
+    document.getElementById('matchupContent').innerHTML = `
+      <div class="matchup-card">
+        <div class="team-side">
+          <h3>${teamNames[team] || team}</h3>
+          <p>SP: ${game.our_probable_pitcher}</p>
+        </div>
+        <div class="vs">${game.home_away === 'Home' ? 'vs' : '@'}</div>
+        <div class="team-side">
+          <h3>${game.opponent}</h3>
+          <p>SP: ${game.opponent_probable_pitcher}</p>
+        </div>
+      </div>
+      <p style="margin-top:12px; font-size:0.85rem; color:#888;">📍 ${game.venue} &nbsp;|&nbsp; ${game.status}</p>
+    `;
+  }
+</script>
+
+</body>
 </html>
