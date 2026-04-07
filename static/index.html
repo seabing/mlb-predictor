@@ -9,6 +9,9 @@
     body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; }
     header { background: #1a1d2e; padding: 16px 32px; display: flex; align-items: center; gap: 16px; border-bottom: 2px solid #2a2d3e; }
     header h1 { font-size: 1.4rem; font-weight: 700; color: #4fc3f7; }
+    nav { display: flex; gap: 8px; margin-left: auto; }
+    nav button { background: #2a2d3e; color: #e0e0e0; border: 1px solid #3a3d4e; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    nav button.active { background: #4fc3f7; color: #0f1117; font-weight: 600; }
     select { background: #2a2d3e; color: #e0e0e0; border: 1px solid #3a3d4e; padding: 8px 12px; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
     .container { max-width: 1100px; margin: 32px auto; padding: 0 24px; }
     .section { background: #1a1d2e; border-radius: 10px; padding: 24px; margin-bottom: 24px; border: 1px solid #2a2d3e; }
@@ -20,7 +23,7 @@
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
     .badge-il { background: #ff4444; color: white; }
     .badge-active { background: #2e7d32; color: white; }
-    .badge-other { background: #555; color: white; }
+    .badge-traded { background: #f57c00; color: white; }
     .matchup-card { background: #12151f; border-radius: 8px; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
     .team-side { text-align: center; flex: 1; }
     .team-side h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
@@ -28,71 +31,187 @@
     .vs { font-size: 1.5rem; font-weight: 700; color: #4fc3f7; padding: 0 24px; }
     .no-game { color: #888; font-style: italic; }
     .loading { color: #888; font-style: italic; }
-    .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; background: #2a2d3e; color: #aaa; margin-left: 8px; }
+    .trade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .trade-team { background: #12151f; border-radius: 8px; padding: 16px; }
+    .trade-team h3 { font-size: 0.95rem; font-weight: 600; color: #4fc3f7; margin-bottom: 12px; }
+    .trade-selects { display: flex; gap: 12px; margin-bottom: 20px; }
+    .trade-btn { background: #2a2d3e; border: 1px solid #3a3d4e; color: #e0e0e0; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: background 0.2s; }
+    .trade-btn:hover { background: #4fc3f7; color: #0f1117; }
+    .trade-btn-danger { background: #2a2d3e; border: 1px solid #ff4444; color: #ff4444; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    .trade-btn-danger:hover { background: #ff4444; color: white; }
+    .traded-list { margin-top: 16px; }
+    .traded-item { background: #1a1d2e; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; }
+    .page { display: none; }
+    .page.active { display: block; }
   </style>
 </head>
 <body>
 
 <header>
   <h1>⚾ MLB Predictor</h1>
-  <select id="teamSelect">
-    <option value="">Select a team...</option>
-    <option value="ARI">Arizona Diamondbacks</option>
-    <option value="ATL">Atlanta Braves</option>
-    <option value="BAL">Baltimore Orioles</option>
-    <option value="BOS">Boston Red Sox</option>
-    <option value="CHC">Chicago Cubs</option>
-    <option value="CWS">Chicago White Sox</option>
-    <option value="CIN">Cincinnati Reds</option>
-    <option value="CLE">Cleveland Guardians</option>
-    <option value="COL">Colorado Rockies</option>
-    <option value="DET">Detroit Tigers</option>
-    <option value="HOU">Houston Astros</option>
-    <option value="KC">Kansas City Royals</option>
-    <option value="LAA">Los Angeles Angels</option>
-    <option value="LAD">Los Angeles Dodgers</option>
-    <option value="MIA">Miami Marlins</option>
-    <option value="MIL">Milwaukee Brewers</option>
-    <option value="MIN">Minnesota Twins</option>
-    <option value="NYM">New York Mets</option>
-    <option value="NYY">New York Yankees</option>
-    <option value="OAK">Oakland Athletics</option>
-    <option value="PHI">Philadelphia Phillies</option>
-    <option value="PIT">Pittsburgh Pirates</option>
-    <option value="SD">San Diego Padres</option>
-    <option value="SF">San Francisco Giants</option>
-    <option value="SEA">Seattle Mariners</option>
-    <option value="STL">St. Louis Cardinals</option>
-    <option value="TB">Tampa Bay Rays</option>
-    <option value="TEX">Texas Rangers</option>
-    <option value="TOR">Toronto Blue Jays</option>
-    <option value="WSH">Washington Nationals</option>
-  </select>
+  <nav>
+    <button class="active" onclick="showPage('roster')">Roster</button>
+    <button onclick="showPage('trades')">Trade Simulator</button>
+  </nav>
 </header>
 
 <div class="container">
 
-  <div class="section" id="matchupSection" style="display:none">
-    <h2>Today's Matchup</h2>
-    <div id="matchupContent"></div>
+  <!-- ROSTER PAGE -->
+  <div class="page active" id="page-roster">
+    <div style="margin-bottom:20px;">
+      <select id="teamSelect">
+        <option value="">Select a team...</option>
+        <option value="ARI">Arizona Diamondbacks</option>
+        <option value="ATL">Atlanta Braves</option>
+        <option value="BAL">Baltimore Orioles</option>
+        <option value="BOS">Boston Red Sox</option>
+        <option value="CHC">Chicago Cubs</option>
+        <option value="CWS">Chicago White Sox</option>
+        <option value="CIN">Cincinnati Reds</option>
+        <option value="CLE">Cleveland Guardians</option>
+        <option value="COL">Colorado Rockies</option>
+        <option value="DET">Detroit Tigers</option>
+        <option value="HOU">Houston Astros</option>
+        <option value="KC">Kansas City Royals</option>
+        <option value="LAA">Los Angeles Angels</option>
+        <option value="LAD">Los Angeles Dodgers</option>
+        <option value="MIA">Miami Marlins</option>
+        <option value="MIL">Milwaukee Brewers</option>
+        <option value="MIN">Minnesota Twins</option>
+        <option value="NYM">New York Mets</option>
+        <option value="NYY">New York Yankees</option>
+        <option value="OAK">Oakland Athletics</option>
+        <option value="PHI">Philadelphia Phillies</option>
+        <option value="PIT">Pittsburgh Pirates</option>
+        <option value="SD">San Diego Padres</option>
+        <option value="SF">San Francisco Giants</option>
+        <option value="SEA">Seattle Mariners</option>
+        <option value="STL">St. Louis Cardinals</option>
+        <option value="TB">Tampa Bay Rays</option>
+        <option value="TEX">Texas Rangers</option>
+        <option value="TOR">Toronto Blue Jays</option>
+        <option value="WSH">Washington Nationals</option>
+      </select>
+    </div>
+
+    <div class="section" id="matchupSection" style="display:none">
+      <h2>Today's Matchup</h2>
+      <div id="matchupContent"></div>
+    </div>
+
+    <div class="section" id="rosterSection" style="display:none">
+      <h2>Roster — <span id="rosterTeamName"></span></h2>
+      <h3 style="font-size:0.85rem; color:#888; margin-bottom:12px; margin-top:4px;">Hitters</h3>
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Position</th><th>Status</th></tr></thead>
+        <tbody id="hittersBody"></tbody>
+      </table>
+      <h3 style="font-size:0.85rem; color:#888; margin:20px 0 12px;">Pitchers</h3>
+      <table>
+        <thead><tr><th>#</th><th>Name</th><th>Status</th></tr></thead>
+        <tbody id="pitchersBody"></tbody>
+      </table>
+    </div>
   </div>
 
-  <div class="section" id="rosterSection" style="display:none">
-    <h2>Roster — <span id="rosterTeamName"></span></h2>
-    <h3 style="font-size:0.85rem; color:#888; margin-bottom:12px; margin-top:4px;">Hitters</h3>
-    <table>
-      <thead>
-        <tr><th>#</th><th>Name</th><th>Position</th><th>Status</th></tr>
-      </thead>
-      <tbody id="hittersBody"></tbody>
-    </table>
-    <h3 style="font-size:0.85rem; color:#888; margin:20px 0 12px;">Pitchers</h3>
-    <table>
-      <thead>
-        <tr><th>#</th><th>Name</th><th>Status</th></tr>
-      </thead>
-      <tbody id="pitchersBody"></tbody>
-    </table>
+  <!-- TRADE SIMULATOR PAGE -->
+  <div class="page" id="page-trades">
+    <div class="section">
+      <h2>Trade Simulator</h2>
+      <div class="trade-selects">
+        <select id="tradeTeam1">
+          <option value="">Team 1...</option>
+          <option value="ARI">Arizona Diamondbacks</option>
+          <option value="ATL">Atlanta Braves</option>
+          <option value="BAL">Baltimore Orioles</option>
+          <option value="BOS">Boston Red Sox</option>
+          <option value="CHC">Chicago Cubs</option>
+          <option value="CWS">Chicago White Sox</option>
+          <option value="CIN">Cincinnati Reds</option>
+          <option value="CLE">Cleveland Guardians</option>
+          <option value="COL">Colorado Rockies</option>
+          <option value="DET">Detroit Tigers</option>
+          <option value="HOU">Houston Astros</option>
+          <option value="KC">Kansas City Royals</option>
+          <option value="LAA">Los Angeles Angels</option>
+          <option value="LAD">Los Angeles Dodgers</option>
+          <option value="MIA">Miami Marlins</option>
+          <option value="MIL">Milwaukee Brewers</option>
+          <option value="MIN">Minnesota Twins</option>
+          <option value="NYM">New York Mets</option>
+          <option value="NYY">New York Yankees</option>
+          <option value="OAK">Oakland Athletics</option>
+          <option value="PHI">Philadelphia Phillies</option>
+          <option value="PIT">Pittsburgh Pirates</option>
+          <option value="SD">San Diego Padres</option>
+          <option value="SF">San Francisco Giants</option>
+          <option value="SEA">Seattle Mariners</option>
+          <option value="STL">St. Louis Cardinals</option>
+          <option value="TB">Tampa Bay Rays</option>
+          <option value="TEX">Texas Rangers</option>
+          <option value="TOR">Toronto Blue Jays</option>
+          <option value="WSH">Washington Nationals</option>
+        </select>
+        <select id="tradeTeam2">
+          <option value="">Team 2...</option>
+          <option value="ARI">Arizona Diamondbacks</option>
+          <option value="ATL">Atlanta Braves</option>
+          <option value="BAL">Baltimore Orioles</option>
+          <option value="BOS">Boston Red Sox</option>
+          <option value="CHC">Chicago Cubs</option>
+          <option value="CWS">Chicago White Sox</option>
+          <option value="CIN">Cincinnati Reds</option>
+          <option value="CLE">Cleveland Guardians</option>
+          <option value="COL">Colorado Rockies</option>
+          <option value="DET">Detroit Tigers</option>
+          <option value="HOU">Houston Astros</option>
+          <option value="KC">Kansas City Royals</option>
+          <option value="LAA">Los Angeles Angels</option>
+          <option value="LAD">Los Angeles Dodgers</option>
+          <option value="MIA">Miami Marlins</option>
+          <option value="MIL">Milwaukee Brewers</option>
+          <option value="MIN">Minnesota Twins</option>
+          <option value="NYM">New York Mets</option>
+          <option value="NYY">New York Yankees</option>
+          <option value="OAK">Oakland Athletics</option>
+          <option value="PHI">Philadelphia Phillies</option>
+          <option value="PIT">Pittsburgh Pirates</option>
+          <option value="SD">San Diego Padres</option>
+          <option value="SF">San Francisco Giants</option>
+          <option value="SEA">Seattle Mariners</option>
+          <option value="STL">St. Louis Cardinals</option>
+          <option value="TB">Tampa Bay Rays</option>
+          <option value="TEX">Texas Rangers</option>
+          <option value="TOR">Toronto Blue Jays</option>
+          <option value="WSH">Washington Nationals</option>
+        </select>
+        <button class="trade-btn" onclick="loadTradeRosters()">Load Rosters</button>
+        <button class="trade-btn-danger" onclick="resetTrades()">Reset All Trades</button>
+      </div>
+
+      <div class="trade-grid">
+        <div class="trade-team">
+          <h3 id="tradeTeam1Name">Team 1</h3>
+          <table>
+            <thead><tr><th>Name</th><th>Pos</th><th></th></tr></thead>
+            <tbody id="tradeRoster1"></tbody>
+          </table>
+        </div>
+        <div class="trade-team">
+          <h3 id="tradeTeam2Name">Team 2</h3>
+          <table>
+            <thead><tr><th>Name</th><th>Pos</th><th></th></tr></thead>
+            <tbody id="tradeRoster2"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="traded-list" id="tradedList" style="display:none">
+        <h3 style="font-size:0.85rem; color:#888; margin-bottom:12px;">Completed Trades</h3>
+        <div id="tradedItems"></div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -113,13 +232,24 @@
     TEX:'Texas Rangers', TOR:'Toronto Blue Jays', WSH:'Washington Nationals'
   };
 
+  let tradeRoster1Data = [];
+  let tradeRoster2Data = [];
+  let trades = [];
+
+  function showPage(name) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    event.target.classList.add('active');
+    if (name === 'trades') loadTradesFromServer();
+  }
+
+  // ROSTER PAGE
   document.getElementById('teamSelect').addEventListener('change', async function() {
     const team = this.value;
     if (!team) return;
-
     document.getElementById('rosterSection').style.display = 'none';
     document.getElementById('matchupSection').style.display = 'none';
-
     loadRoster(team);
     loadSchedule(team);
   });
@@ -133,8 +263,8 @@
     const resp = await fetch(`${API}/roster/${team}`);
     const data = await resp.json();
 
-    const active = data.roster.filter(p => !p.il && (p.status === 'Active'));
-    const hitters = active.filter(p => p.position_type !== 'Pitcher' && p.position_type !== 'Two-Way Player');
+    const active = data.roster.filter(p => p.status === 'Active');
+    const hitters = active.filter(p => p.position_type !== 'Pitcher');
     const pitchers = active.filter(p => p.position_type === 'Pitcher');
     const ilPlayers = data.roster.filter(p => p.il);
 
@@ -202,6 +332,111 @@
       <p style="margin-top:12px; font-size:0.85rem; color:#888;">📍 ${game.venue} &nbsp;|&nbsp; ${game.status}</p>
     `;
   }
+
+  // TRADE SIMULATOR
+  async function loadTradesFromServer() {
+    const resp = await fetch(`${API}/trades`);
+    const data = await resp.json();
+    trades = data.trades || [];
+    renderTrades();
+  }
+
+  async function loadTradeRosters() {
+    const t1 = document.getElementById('tradeTeam1').value;
+    const t2 = document.getElementById('tradeTeam2').value;
+    if (!t1 || !t2) { alert('Please select two teams.'); return; }
+    if (t1 === t2) { alert('Please select two different teams.'); return; }
+
+    document.getElementById('tradeTeam1Name').textContent = teamNames[t1];
+    document.getElementById('tradeTeam2Name').textContent = teamNames[t2];
+    document.getElementById('tradeRoster1').innerHTML = '<tr><td colspan="3" class="loading">Loading...</td></tr>';
+    document.getElementById('tradeRoster2').innerHTML = '<tr><td colspan="3" class="loading">Loading...</td></tr>';
+
+    const [r1, r2] = await Promise.all([
+      fetch(`${API}/roster/${t1}`).then(r => r.json()),
+      fetch(`${API}/roster/${t2}`).then(r => r.json())
+    ]);
+
+    tradeRoster1Data = r1.roster.filter(p => p.status === 'Active');
+    tradeRoster2Data = r2.roster.filter(p => p.status === 'Active');
+
+    renderTradeRosters(t1, t2);
+  }
+
+  function renderTradeRosters(t1, t2) {
+    t1 = t1 || document.getElementById('tradeTeam1').value;
+    t2 = t2 || document.getElementById('tradeTeam2').value;
+
+    const tradedToT2 = trades.filter(t => t.from_team === t1 && t.to_team === t2).map(t => t.player_id);
+    const tradedToT1 = trades.filter(t => t.from_team === t2 && t.to_team === t1).map(t => t.player_id);
+
+    const rows1 = tradeRoster1Data.map(p => {
+      const traded = tradedToT2.includes(p.id);
+      return `<tr>
+        <td>${p.name}${traded ? ' <span class="badge badge-traded">Traded</span>' : ''}</td>
+        <td>${p.position}</td>
+        <td>${!traded ? `<button class="trade-btn" onclick="executeTrade(${p.id}, '${p.name}', '${t1}', '${t2}')">→ ${document.getElementById('tradeTeam2').options[document.getElementById('tradeTeam2').selectedIndex].text.split(' ')[0]}</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+
+    const incoming1 = trades.filter(t => t.from_team === t2 && t.to_team === t1);
+    const incomingRows1 = incoming1.map(p => `<tr>
+      <td>${p.player_name} <span class="badge badge-traded">Acquired</span></td>
+      <td>—</td><td></td>
+    </tr>`).join('');
+
+    const rows2 = tradeRoster2Data.map(p => {
+      const traded = tradedToT1.includes(p.id);
+      return `<tr>
+        <td>${p.name}${traded ? ' <span class="badge badge-traded">Traded</span>' : ''}</td>
+        <td>${p.position}</td>
+        <td>${!traded ? `<button class="trade-btn" onclick="executeTrade(${p.id}, '${p.name}', '${t2}', '${t1}')">→ ${document.getElementById('tradeTeam1').options[document.getElementById('tradeTeam1').selectedIndex].text.split(' ')[0]}</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+
+    const incoming2 = trades.filter(t => t.from_team === t1 && t.to_team === t2);
+    const incomingRows2 = incoming2.map(p => `<tr>
+      <td>${p.player_name} <span class="badge badge-traded">Acquired</span></td>
+      <td>—</td><td></td>
+    </tr>`).join('');
+
+    document.getElementById('tradeRoster1').innerHTML = rows1 + incomingRows1;
+    document.getElementById('tradeRoster2').innerHTML = rows2 + incomingRows2;
+
+    renderTrades();
+  }
+
+  async function executeTrade(playerId, playerName, fromTeam, toTeam) {
+    await fetch(`${API}/trades`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player_id: playerId, player_name: playerName, from_team: fromTeam, to_team: toTeam })
+    });
+    await loadTradesFromServer();
+    renderTradeRosters();
+  }
+
+  function renderTrades() {
+    const container = document.getElementById('tradedItems');
+    const section = document.getElementById('tradedList');
+    if (trades.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    container.innerHTML = trades.map(t => `
+      <div class="traded-item">
+        <span><strong>${t.player_name}</strong> — ${t.from_team} → ${t.to_team}</span>
+      </div>
+    `).join('');
+  }
+
+  async function resetTrades() {
+    if (!confirm('Reset all trades?')) return;
+    await fetch(`${API}/trades`, { method: 'DELETE' });
+    trades = [];
+    renderTrades();
+    renderTradeRosters();
+  }
+
+  loadTradesFromServer();
 </script>
 
 </body>
