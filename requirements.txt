@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pybaseball
+pandas
+python-dotenv
+requests
