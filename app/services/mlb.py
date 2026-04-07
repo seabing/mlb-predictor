@@ -86,3 +86,47 @@ def get_schedule(team_code, date=None):
         "date": date,
         "games": games
     }
+def get_upcoming(team_code, days=7):
+    team_id = TEAM_IDS.get(team_code.upper())
+    if not team_id:
+        return {"error": f"Team code '{team_code}' not found"}
+
+    from datetime import date, timedelta
+    today = date.today()
+    start = today.strftime("%Y-%m-%d")
+    end = (today + timedelta(days=days)).strftime("%Y-%m-%d")
+
+    url = f"{BASE_URL}/schedule?sportId=1&teamId={team_id}&startDate={start}&endDate={end}&hydrate=team,probablePitcher"
+    resp = requests.get(url).json()
+
+    games = []
+    for date_entry in resp.get("dates", []):
+        for game in date_entry.get("games", []):
+            home = game["teams"]["home"]
+            away = game["teams"]["away"]
+            is_home = home["team"]["id"] == team_id
+            opponent = away["team"] if is_home else home["team"]
+            our_side = home if is_home else away
+            opp_side = away if is_home else home
+
+            our_pitcher = our_side.get("probablePitcher", {}).get("fullName", "TBD")
+            opp_pitcher = opp_side.get("probablePitcher", {}).get("fullName", "TBD")
+
+            games.append({
+                "game_id": game["gamePk"],
+                "date": date_entry["date"],
+                "home_away": "Home" if is_home else "Away",
+                "opponent": opponent["name"],
+                "opponent_code": opponent.get("abbreviation", ""),
+                "our_probable_pitcher": our_pitcher,
+                "opponent_probable_pitcher": opp_pitcher,
+                "status": game["status"]["detailedState"],
+                "venue": game.get("venue", {}).get("name", "")
+            })
+
+    return {
+        "team": team_code.upper(),
+        "start": start,
+        "end": end,
+        "games": games
+    }

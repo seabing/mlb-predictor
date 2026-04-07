@@ -50,8 +50,9 @@
 <header>
   <h1>⚾ MLB Predictor</h1>
   <nav>
-    <button class="active" onclick="showPage('roster')">Roster</button>
-    <button onclick="showPage('trades')">Trade Simulator</button>
+    <button class="active" onclick="showPage('roster', this)">Roster</button>
+    <button onclick="showPage('matchup', this)">Matchup</button>
+    <button onclick="showPage('trades', this)">Trade Simulator</button>
   </nav>
 </header>
 
@@ -112,6 +113,49 @@
         <thead><tr><th>#</th><th>Name</th><th>Status</th></tr></thead>
         <tbody id="pitchersBody"></tbody>
       </table>
+    </div>
+  </div>
+
+<!-- MATCHUP PAGE -->
+  <div class="page" id="page-matchup">
+    <div class="section">
+      <h2>Upcoming Schedule</h2>
+      <div style="margin-bottom:20px;">
+        <select id="matchupTeamSelect">
+          <option value="">Select a team...</option>
+          <option value="ARI">Arizona Diamondbacks</option>
+          <option value="ATL">Atlanta Braves</option>
+          <option value="BAL">Baltimore Orioles</option>
+          <option value="BOS">Boston Red Sox</option>
+          <option value="CHC">Chicago Cubs</option>
+          <option value="CWS">Chicago White Sox</option>
+          <option value="CIN">Cincinnati Reds</option>
+          <option value="CLE">Cleveland Guardians</option>
+          <option value="COL">Colorado Rockies</option>
+          <option value="DET">Detroit Tigers</option>
+          <option value="HOU">Houston Astros</option>
+          <option value="KC">Kansas City Royals</option>
+          <option value="LAA">Los Angeles Angels</option>
+          <option value="LAD">Los Angeles Dodgers</option>
+          <option value="MIA">Miami Marlins</option>
+          <option value="MIL">Milwaukee Brewers</option>
+          <option value="MIN">Minnesota Twins</option>
+          <option value="NYM">New York Mets</option>
+          <option value="NYY">New York Yankees</option>
+          <option value="OAK">Oakland Athletics</option>
+          <option value="PHI">Philadelphia Phillies</option>
+          <option value="PIT">Pittsburgh Pirates</option>
+          <option value="SD">San Diego Padres</option>
+          <option value="SF">San Francisco Giants</option>
+          <option value="SEA">Seattle Mariners</option>
+          <option value="STL">St. Louis Cardinals</option>
+          <option value="TB">Tampa Bay Rays</option>
+          <option value="TEX">Texas Rangers</option>
+          <option value="TOR">Toronto Blue Jays</option>
+          <option value="WSH">Washington Nationals</option>
+        </select>
+      </div>
+      <div id="upcomingContent"></div>
     </div>
   </div>
 
@@ -236,11 +280,11 @@
   let tradeRoster2Data = [];
   let trades = [];
 
-  function showPage(name) {
+  function showPage(name, btn) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
     document.getElementById('page-' + name).classList.add('active');
-    event.target.classList.add('active');
+    if (btn) btn.classList.add('active');
     if (name === 'trades') loadTradesFromServer();
   }
 
@@ -332,6 +376,36 @@
       <p style="margin-top:12px; font-size:0.85rem; color:#888;">📍 ${game.venue} &nbsp;|&nbsp; ${game.status}</p>
     `;
   }
+
+document.getElementById('matchupTeamSelect').addEventListener('change', async function() {
+    const team = this.value;
+    if (!team) return;
+    document.getElementById('upcomingContent').innerHTML = '<p class="loading">Loading schedule...</p>';
+    const resp = await fetch(`${API}/upcoming/${team}`);
+    const data = await resp.json();
+    if (!data.games || data.games.length === 0) {
+      document.getElementById('upcomingContent').innerHTML = '<p class="no-game">No upcoming games found.</p>';
+      return;
+    }
+    const rows = data.games.map(g => `
+      <div class="matchup-card" style="margin-bottom:12px;">
+        <div class="team-side">
+          <h3>${teamNames[team]}</h3>
+          <p>SP: ${g.our_probable_pitcher}</p>
+        </div>
+        <div style="text-align:center; padding: 0 16px;">
+          <div class="vs">${g.home_away === 'Home' ? 'vs' : '@'}</div>
+          <div style="font-size:0.8rem; color:#888; margin-top:4px;">${g.date}</div>
+          <div style="font-size:0.75rem; color:#666;">${g.status}</div>
+        </div>
+        <div class="team-side">
+          <h3>${g.opponent}</h3>
+          <p>SP: ${g.opponent_probable_pitcher}</p>
+        </div>
+      </div>
+    `).join('');
+    document.getElementById('upcomingContent').innerHTML = rows;
+  });
 
   // TRADE SIMULATOR
   async function loadTradesFromServer() {

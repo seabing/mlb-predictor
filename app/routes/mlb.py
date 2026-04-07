@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from app.services.mlb import get_roster, get_schedule
 from app.services.trades import get_trades, add_trade, reset_trades
+from app.services.mlb import get_roster, get_schedule, get_upcoming
 
 router = APIRouter()
 
@@ -24,3 +25,7 @@ def trade(payload: dict):
 @router.delete("/trades")
 def reset():
     return reset_trades()
+
+@router.get("/upcoming/{team_code}")
+def upcoming(team_code: str, days: int = 7):
+    return get_upcoming(team_code, days)
