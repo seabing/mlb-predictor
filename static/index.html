@@ -34,7 +34,7 @@
     .trade-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
     .trade-team { background: #12151f; border-radius: 8px; padding: 16px; }
     .trade-team h3 { font-size: 0.95rem; font-weight: 600; color: #4fc3f7; margin-bottom: 12px; }
-    .trade-selects { display: flex; gap: 12px; margin-bottom: 20px; }
+    .trade-selects { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
     .trade-btn { background: #2a2d3e; border: 1px solid #3a3d4e; color: #e0e0e0; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: background 0.2s; }
     .trade-btn:hover { background: #4fc3f7; color: #0f1117; }
     .trade-btn-danger { background: #2a2d3e; border: 1px solid #ff4444; color: #ff4444; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
@@ -43,6 +43,13 @@
     .traded-item { background: #1a1d2e; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; }
     .page { display: none; }
     .page.active { display: block; }
+    @media (max-width: 600px) {
+      header { flex-wrap: wrap; padding: 12px 16px; }
+      nav { width: 100%; justify-content: center; }
+      .trade-grid { grid-template-columns: 1fr; }
+      .matchup-card { flex-direction: column; gap: 12px; }
+      .vs { padding: 0; }
+    }
   </style>
 </head>
 <body>
@@ -116,7 +123,7 @@
     </div>
   </div>
 
-<!-- MATCHUP PAGE -->
+  <!-- MATCHUP PAGE -->
   <div class="page" id="page-matchup">
     <div class="section">
       <h2>Upcoming Schedule</h2>
@@ -261,7 +268,9 @@
 </div>
 
 <script>
-  const API = '';
+  const API = '/api';
+  const _fetch = window.fetch;
+  window.fetch = (url, opts = {}) => _fetch(url, { ...opts, credentials: 'include' });
 
   const teamNames = {
     ARI:'Arizona Diamondbacks', ATL:'Atlanta Braves', BAL:'Baltimore Orioles',
@@ -279,6 +288,8 @@
   let tradeRoster1Data = [];
   let tradeRoster2Data = [];
   let trades = [];
+  let upcomingGames = [];
+  let selectedTeamCode = '';
 
   function showPage(name, btn) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -377,9 +388,7 @@
     `;
   }
 
-let upcomingGames = [];
-  let selectedTeamCode = '';
-
+  // MATCHUP PAGE
   document.getElementById('matchupTeamSelect').addEventListener('change', async function() {
     const team = this.value;
     if (!team) return;
@@ -427,8 +436,7 @@ let upcomingGames = [];
     const homeTeam = game.home_away === 'Home' ? selectedTeamCode : game.opponent_code;
     const awayTeam = game.home_away === 'Away' ? selectedTeamCode : game.opponent_code;
 
-
-  const result = await fetch(`${API}/predict`, {
+    const result = await fetch(`${API}/predict`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
