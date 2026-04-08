@@ -3,13 +3,38 @@ import requests
 BASE_URL = "https://statsapi.mlb.com/api/v1"
 
 TEAM_IDS = {
-    "ARI": 109, "ATL": 144, "BAL": 110, "BOS": 111, "CHC": 112,
-    "CWS": 145, "CIN": 113, "CLE": 114, "COL": 115, "DET": 116,
-    "HOU": 117, "KC": 118, "LAA": 108, "LAD": 119, "MIA": 146,
-    "MIL": 158, "MIN": 142, "NYM": 121, "NYY": 147, "OAK": 133,
-    "PHI": 143, "PIT": 134, "SD": 135, "SF": 137, "SEA": 136,
-    "STL": 138, "TB": 139, "TEX": 140, "TOR": 141, "WSH": 120
+    "ARI": 109, "AZ": 109,
+    "ATL": 144,
+    "BAL": 110,
+    "BOS": 111,
+    "CHC": 112,
+    "CWS": 145, "CHA": 145,
+    "CIN": 113,
+    "CLE": 114,
+    "COL": 115,
+    "DET": 116,
+    "HOU": 117,
+    "KC": 118, "KCA": 118,
+    "LAA": 108,
+    "LAD": 119, "LAN": 119,
+    "MIA": 146,
+    "MIL": 158,
+    "MIN": 142,
+    "NYM": 121,
+    "NYY": 147,
+    "OAK": 133,
+    "PHI": 143,
+    "PIT": 134,
+    "SD": 135, "SDN": 135,
+    "SF": 137, "SFN": 137,
+    "SEA": 136,
+    "STL": 138, "SLN": 138,
+    "TB": 139, "TBA": 139,
+    "TEX": 140,
+    "TOR": 141,
+    "WSH": 120, "WAS": 120
 }
+
 
 def get_roster(team_code):
     team_id = TEAM_IDS.get(team_code.upper())

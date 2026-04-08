@@ -377,35 +377,95 @@
     `;
   }
 
-document.getElementById('matchupTeamSelect').addEventListener('change', async function() {
+let upcomingGames = [];
+  let selectedTeamCode = '';
+
+  document.getElementById('matchupTeamSelect').addEventListener('change', async function() {
     const team = this.value;
     if (!team) return;
+    selectedTeamCode = team;
     document.getElementById('upcomingContent').innerHTML = '<p class="loading">Loading schedule...</p>';
     const resp = await fetch(`${API}/upcoming/${team}`);
     const data = await resp.json();
-    if (!data.games || data.games.length === 0) {
+    upcomingGames = data.games || [];
+    if (upcomingGames.length === 0) {
       document.getElementById('upcomingContent').innerHTML = '<p class="no-game">No upcoming games found.</p>';
       return;
     }
-    const rows = data.games.map(g => `
+    renderUpcoming();
+  });
+
+  function renderUpcoming() {
+    const rows = upcomingGames.map((g, i) => `
       <div class="matchup-card" style="margin-bottom:12px;">
         <div class="team-side">
-          <h3>${teamNames[team]}</h3>
+          <h3>${teamNames[selectedTeamCode]}</h3>
           <p>SP: ${g.our_probable_pitcher}</p>
         </div>
         <div style="text-align:center; padding: 0 16px;">
           <div class="vs">${g.home_away === 'Home' ? 'vs' : '@'}</div>
           <div style="font-size:0.8rem; color:#888; margin-top:4px;">${g.date}</div>
           <div style="font-size:0.75rem; color:#666;">${g.status}</div>
+          <button class="trade-btn" style="margin-top:8px;" onclick="runPrediction(${i})">Predict</button>
         </div>
         <div class="team-side">
           <h3>${g.opponent}</h3>
           <p>SP: ${g.opponent_probable_pitcher}</p>
         </div>
       </div>
+      <div id="prediction-${i}" style="display:none; background:#12151f; border-radius:8px; padding:16px; margin-bottom:12px; margin-top:-8px;"></div>
     `).join('');
     document.getElementById('upcomingContent').innerHTML = rows;
-  });
+  }
+
+  async function runPrediction(index) {
+    const game = upcomingGames[index];
+    const predDiv = document.getElementById(`prediction-${index}`);
+    predDiv.style.display = 'block';
+    predDiv.innerHTML = '<p class="loading">Running prediction... this may take 20-30 seconds...</p>';
+
+    const homeTeam = game.home_away === 'Home' ? selectedTeamCode : game.opponent_code;
+    const awayTeam = game.home_away === 'Away' ? selectedTeamCode : game.opponent_code;
+
+
+  const result = await fetch(`${API}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        home_team: homeTeam,
+        away_team: awayTeam,
+        home_pitcher_id: 0,
+        away_pitcher_id: 0
+      })
+    }).then(r => r.json());
+
+    const homeTeamName = teamNames[homeTeam] || homeTeam;
+    const awayTeamName = teamNames[awayTeam] || awayTeam;
+    const homeWin = result.home_win_pct;
+    const awayWin = result.away_win_pct;
+    const favored = homeWin >= awayWin ? homeTeamName : awayTeamName;
+    const favPct = homeWin >= awayWin ? homeWin : awayWin;
+
+    predDiv.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div style="text-align:center; flex:1;">
+          <div style="font-size:1.8rem; font-weight:700; color:#4fc3f7;">${homeWin}%</div>
+          <div style="font-size:0.85rem; color:#888;">${homeTeamName}</div>
+        </div>
+        <div style="text-align:center; padding:0 16px;">
+          <div style="font-size:0.8rem; color:#666;">WIN PROBABILITY</div>
+        </div>
+        <div style="text-align:center; flex:1;">
+          <div style="font-size:1.8rem; font-weight:700; color:#4fc3f7;">${awayWin}%</div>
+          <div style="font-size:0.85rem; color:#888;">${awayTeamName}</div>
+        </div>
+      </div>
+      <div style="background:#1a1d2e; border-radius:6px; height:8px; overflow:hidden; margin-bottom:12px;">
+        <div style="background:#4fc3f7; height:100%; width:${homeWin}%;"></div>
+      </div>
+      <p style="text-align:center; font-size:0.85rem; color:#aaa;">🏆 Model favors <strong>${favored}</strong> at ${favPct}%</p>
+    `;
+  }
 
   // TRADE SIMULATOR
   async function loadTradesFromServer() {
