@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MLB Predictor — Login</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .login-box { background: #1a1d2e; border: 1px solid #2a2d3e; border-radius: 12px; padding: 40px; width: 100%; max-width: 380px; text-align: center; }
+    h1 { font-size: 1.5rem; color: #4fc3f7; margin-bottom: 8px; }
+    p { color: #888; font-size: 0.9rem; margin-bottom: 24px; }
+    input { width: 100%; background: #12151f; border: 1px solid #3a3d4e; color: #e0e0e0; padding: 12px 16px; border-radius: 6px; font-size: 1rem; margin-bottom: 16px; }
+    button { width: 100%; background: #4fc3f7; color: #0f1117; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button:hover { background: #81d4fa; }
+    .error { color: #ff4444; font-size: 0.85rem; margin-top: 12px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h1>⚾ MLB Predictor</h1>
+    <p>Enter the password to continue</p>
+    <input type="password" id="password" placeholder="Password" onkeydown="if(event.key==='Enter') login()"/>
+    <button onclick="login()">Enter</button>
+    <div class="error" id="error">Wrong password. Try again.</div>
+  </div>
+  <script>
+    async function login() {
+      const password = document.getElementById('password').value;
+      const resp = await fetch('/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      if (resp.ok) {
+        window.location.href = '/';
+      } else {
+        document.getElementById('error').style.display = 'block';
+      }
+    }
+  </script>
+</body>
+</html>
