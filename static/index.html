@@ -442,8 +442,7 @@
       body: JSON.stringify({
         home_team: homeTeam,
         away_team: awayTeam,
-        home_pitcher_id: 0,
-        away_pitcher_id: 0
+        game_date: g.date
       })
     }).then(r => r.json());
 

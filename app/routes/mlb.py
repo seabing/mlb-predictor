@@ -35,14 +35,26 @@ async def predict(request: Request):
     payload = await request.json()
     home_team = payload["home_team"]
     away_team = payload["away_team"]
-    print("HOME TEAM:", home_team)
-    print("AWAY TEAM:", away_team)
-    home_pitcher_id = payload.get("home_pitcher_id", 0)
-    away_pitcher_id = payload.get("away_pitcher_id", 0)
-    home_result = get_roster(home_team)
-    print("HOME RESULT KEYS:", list(home_result.keys()))
-    away_result = get_roster(away_team)
-    print("AWAY RESULT KEYS:", list(away_result.keys()))
-    home_roster = home_result["roster"]
-    away_roster = away_result["roster"]
+    game_date = payload.get("game_date", None)
+
+    home_roster = get_roster(home_team)["roster"]
+    away_roster = get_roster(away_team)["roster"]
+
+    # Try to get probable pitchers from schedule
+    home_pitcher_id = 0
+    away_pitcher_id = 0
+    schedule = get_schedule(home_team, game_date)
+    for game in schedule.get("games", []):
+        opp_code = game.get("opponent_code", "")
+        if opp_code == away_team or away_team in game.get("opponent", ""):
+            # Find pitcher IDs from roster
+            our_pitcher_name = game.get("our_probable_pitcher", "")
+            opp_pitcher_name = game.get("opponent_probable_pitcher", "")
+            for p in home_roster:
+                if p["name"] == our_pitcher_name:
+                    home_pitcher_id = p["id"]
+            for p in away_roster:
+                if p["name"] == opp_pitcher_name:
+                    away_pitcher_id = p["id"]
+
     return predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id)
