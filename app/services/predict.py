@@ -76,33 +76,45 @@ def score_pitcher(player_id):
 
     return score
 
-def predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id):
-    home_hit = score_lineup(home_roster)
-    away_hit = score_lineup(away_roster)
-    home_pitch = score_pitcher(home_pitcher_id)
-    away_pitch = score_pitcher(away_pitcher_id)
+@router.post("/predict")
+async def predict(request: Request):
+    try:
+        payload = await request.json()
+        home_team = payload["home_team"]
+        away_team = payload["away_team"]
+        game_date = payload.get("game_date", None)
 
-    # Shift pitcher scores to positive range (they can be negative due to negative weights)
-    home_pitch_adj = home_pitch + 0.5
-    away_pitch_adj = away_pitch + 0.5
+        home_result = get_roster(home_team)
+        away_result = get_roster(away_team)
 
-    # Combine offense vs opposing pitcher
-    home_score = (home_hit * 0.55) + (home_pitch_adj * 0.45)
-    away_score = (away_hit * 0.55) + (away_pitch_adj * 0.45)
+        if "error" in home_result:
+            return JSONResponse({"error": f"Could not find roster for {home_team}"}, status_code=400)
+        if "error" in away_result:
+            return JSONResponse({"error": f"Could not find roster for {away_team}"}, status_code=400)
 
-    # Normalize to percentages
-    total = home_score + away_score
-    if total == 0:
-        return {"home_win_pct": 50, "away_win_pct": 50}
+        home_roster = home_result["roster"]
+        away_roster = away_result["roster"]
 
-    home_win_pct = round((home_score / total) * 100, 1)
-    away_win_pct = round(100 - home_win_pct, 1)
+        home_pitcher_id = 0
+        away_pitcher_id = 0
+        schedule = get_schedule(home_team, game_date)
+        for game in schedule.get("games", []):
+            opp_code = game.get("opponent_code", "")
+            if opp_code == away_team or away_team in game.get("opponent", ""):
+                our_pitcher_name = game.get("our_probable_pitcher", "")
+                opp_pitcher_name = game.get("opponent_probable_pitcher", "")
+                for p in home_roster:
+                    if p["name"] == our_pitcher_name:
+                        home_pitcher_id = p["id"]
+                for p in away_roster:
+                    if p["name"] == opp_pitcher_name:
+                        away_pitcher_id = p["id"]
 
-    return {
-        "home_win_pct": home_win_pct,
-        "away_win_pct": away_win_pct,
-        "home_offense_score": round(home_hit, 4),
-        "away_offense_score": round(away_hit, 4),
-        "home_pitcher_score": round(home_pitch, 4),
-        "away_pitcher_score": round(away_pitch, 4)
-    }
+        print(f"Predicting: {home_team} vs {away_team} on {game_date}")
+        print(f"Home pitcher: {home_pitcher_id}, Away pitcher: {away_pitcher_id}")
+
+        return predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id)
+    except Exception as e:
+        import traceback
+        print("PREDICT ERROR:", traceback.format_exc())
+        return JSONResponse({"error": str(e)}, status_code=500)
