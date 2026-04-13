@@ -156,3 +156,45 @@ def get_upcoming(team_code, days=7):
         "end": end,
         "games": games
     }
+
+def get_lineup(game_id):
+    url = f"{BASE_URL}/game/{game_id}/boxscore"
+    resp = requests.get(url).json()
+
+    result = {}
+    for side in ["home", "away"]:
+        team_data = resp.get("teams", {}).get(side, {})
+        team_name = team_data.get("team", {}).get("name", "")
+        batting_order = team_data.get("battingOrder", [])
+        players = team_data.get("players", {})
+
+        lineup = []
+        for player_id in batting_order:
+            key = f"ID{player_id}"
+            player = players.get(key, {})
+            person = player.get("person", {})
+            pos = player.get("position", {})
+            lineup.append({
+                "id": player_id,
+                "name": person.get("fullName", ""),
+                "position": pos.get("abbreviation", ""),
+                "batting_order": batting_order.index(player_id) + 1
+            })
+
+        # Get starting pitcher
+        pitchers = team_data.get("pitchers", [])
+        starter_id = pitchers[0] if pitchers else 0
+        starter_name = ""
+        if starter_id:
+            key = f"ID{starter_id}"
+            starter_name = players.get(key, {}).get("person", {}).get("fullName", "TBD")
+
+        result[side] = {
+            "team": team_name,
+            "lineup": lineup,
+            "starter_id": starter_id,
+            "starter_name": starter_name,
+            "lineup_available": len(lineup) > 0
+        }
+
+    return result

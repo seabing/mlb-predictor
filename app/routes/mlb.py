@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from app.services.mlb import get_roster, get_schedule, get_upcoming
+from app.services.mlb import get_roster, get_schedule, get_upcoming, get_lineup
 from app.services.trades import get_trades, add_trade, reset_trades
 from app.services.predict import predict_game
 
@@ -31,6 +31,10 @@ async def trade(request: Request):
 def reset():
     return reset_trades()
 
+@router.get("/lineup/{game_id}")
+def lineup(game_id: int):
+    return get_lineup(game_id)
+
 @router.post("/predict")
 async def predict(request: Request):
     try:
@@ -38,6 +42,9 @@ async def predict(request: Request):
         home_team = payload["home_team"]
         away_team = payload["away_team"]
         game_date = payload.get("game_date", None)
+        game_id = payload.get("game_id", None)
+        manual_home_lineup = payload.get("manual_home_lineup", None)
+        manual_away_lineup = payload.get("manual_away_lineup", None)
 
         home_result = get_roster(home_team)
         away_result = get_roster(away_team)
@@ -52,23 +59,55 @@ async def predict(request: Request):
 
         home_pitcher_id = 0
         away_pitcher_id = 0
-        schedule = get_schedule(home_team, game_date)
-        for game in schedule.get("games", []):
-            opp_code = game.get("opponent_code", "")
-            if opp_code == away_team or away_team in game.get("opponent", ""):
-                our_pitcher_name = game.get("our_probable_pitcher", "")
-                opp_pitcher_name = game.get("opponent_probable_pitcher", "")
-                for p in home_roster:
-                    if p["name"] == our_pitcher_name:
-                        home_pitcher_id = p["id"]
-                for p in away_roster:
-                    if p["name"] == opp_pitcher_name:
-                        away_pitcher_id = p["id"]
+        lineup_source = "roster"
 
-        print(f"Predicting: {home_team} vs {away_team} on {game_date}")
+        # Try to get actual lineup from MLB API
+        if game_id:
+            lineup_data = get_lineup(game_id)
+            home_lineup = lineup_data.get("home", {})
+            away_lineup = lineup_data.get("away", {})
+
+            if home_lineup.get("lineup_available") and away_lineup.get("lineup_available"):
+                lineup_source = "mlb_api"
+                home_pitcher_id = home_lineup.get("starter_id", 0)
+                away_pitcher_id = away_lineup.get("starter_id", 0)
+
+                # Build roster-like objects from lineup
+                home_lineup_ids = {p["id"] for p in home_lineup["lineup"]}
+                away_lineup_ids = {p["id"] for p in away_lineup["lineup"]}
+                home_roster = [p for p in home_roster if p["id"] in home_lineup_ids]
+                away_roster = [p for p in away_roster if p["id"] in away_lineup_ids]
+
+        # Manual lineup overrides everything
+        if manual_home_lineup:
+            lineup_source = "manual"
+            home_roster = manual_home_lineup
+        if manual_away_lineup:
+            lineup_source = "manual"
+            away_roster = manual_away_lineup
+
+        # Fall back to schedule-based pitcher lookup if still no pitcher
+        if not home_pitcher_id or not away_pitcher_id:
+            schedule = get_schedule(home_team, game_date)
+            for game in schedule.get("games", []):
+                opp_code = game.get("opponent_code", "")
+                if opp_code == away_team or away_team in game.get("opponent", ""):
+                    our_pitcher_name = game.get("our_probable_pitcher", "")
+                    opp_pitcher_name = game.get("opponent_probable_pitcher", "")
+                    for p in home_result["roster"]:
+                        if p["name"] == our_pitcher_name:
+                            home_pitcher_id = p["id"]
+                    for p in away_result["roster"]:
+                        if p["name"] == opp_pitcher_name:
+                            away_pitcher_id = p["id"]
+
+        print(f"Predicting: {home_team} vs {away_team} | Source: {lineup_source}")
         print(f"Home pitcher: {home_pitcher_id}, Away pitcher: {away_pitcher_id}")
 
-        return predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id)
+        result = predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id)
+        result["lineup_source"] = lineup_source
+        return result
+
     except Exception as e:
         import traceback
         print("PREDICT ERROR:", traceback.format_exc())

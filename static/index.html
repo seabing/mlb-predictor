@@ -439,10 +439,11 @@
     const result = await fetch(`${API}/predict`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+      body: JSON.stringify({
         home_team: homeTeam,
         away_team: awayTeam,
-        game_date: gameDate
+        game_date: gameDate,
+        game_id: g.game_id
       })
     }).then(r => r.json());
 
@@ -471,6 +472,7 @@
         <div style="background:#4fc3f7; height:100%; width:${homeWin}%;"></div>
       </div>
       <p style="text-align:center; font-size:0.85rem; color:#aaa;">🏆 Model favors <strong>${favored}</strong> at ${favPct}%</p>
+      <p style="text-align:center; font-size:0.75rem; color:#555; margin-top:6px;">Data source: ${result.lineup_source === 'mlb_api' ? '✅ Official MLB lineup' : result.lineup_source === 'manual' ? '✏️ Manual lineup' : '📋 Full roster'}</p>
     `;
   }
 
