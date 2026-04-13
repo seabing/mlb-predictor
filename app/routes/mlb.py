@@ -35,6 +35,14 @@ def reset():
 def lineup(game_id: int):
     return get_lineup(game_id)
 
+@router.get("/hitters/{team_code}")
+def hitters(team_code: str):
+    result = get_roster(team_code)
+    if "error" in result:
+        return result
+    hitters = [p for p in result["roster"] if p["position_type"] != "Pitcher" and p["status"] == "Active"]
+    return {"team": team_code, "hitters": hitters}
+
 @router.post("/predict")
 async def predict(request: Request):
     try:

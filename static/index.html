@@ -404,7 +404,7 @@
     renderUpcoming();
   });
 
-  function renderUpcoming() {
+function renderUpcoming() {
     const rows = upcomingGames.map((g, i) => `
       <div class="matchup-card" style="margin-bottom:12px;">
         <div class="team-side">
@@ -416,10 +416,27 @@
           <div style="font-size:0.8rem; color:#888; margin-top:4px;">${g.date}</div>
           <div style="font-size:0.75rem; color:#666;">${g.status}</div>
           <button class="trade-btn" style="margin-top:8px;" onclick="runPrediction(${i}, '${g.date}', ${g.game_id})">Predict</button>
+          <button class="trade-btn" style="margin-top:8px;" onclick="toggleLineupEditor(${i}, '${g.home_away}', '${selectedTeamCode}', '${g.opponent_code}')">Edit Lineup</button>
         </div>
         <div class="team-side">
           <h3>${g.opponent}</h3>
           <p>SP: ${g.opponent_probable_pitcher}</p>
+        </div>
+      </div>
+      <div id="lineup-editor-${i}" style="display:none; background:#12151f; border-radius:8px; padding:16px; margin-bottom:12px; margin-top:-8px;">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <div>
+            <h4 style="color:#4fc3f7; font-size:0.85rem; margin-bottom:10px;" id="home-label-${i}">Home Lineup</h4>
+            <div id="home-lineup-${i}"></div>
+          </div>
+          <div>
+            <h4 style="color:#4fc3f7; font-size:0.85rem; margin-bottom:10px;" id="away-label-${i}">Away Lineup</h4>
+            <div id="away-lineup-${i}"></div>
+          </div>
+        </div>
+        <div style="margin-top:16px; text-align:center;">
+          <button class="trade-btn" onclick="runPredictionWithLineup(${i}, '${g.date}', ${g.game_id}, '${g.home_away}', '${selectedTeamCode}', '${g.opponent_code}')">🔮 Predict with This Lineup</button>
+          <button class="trade-btn" style="margin-left:8px;" onclick="document.getElementById('lineup-editor-${i}').style.display='none'">Cancel</button>
         </div>
       </div>
       <div id="prediction-${i}" style="display:none; background:#12151f; border-radius:8px; padding:16px; margin-bottom:12px; margin-top:-8px;"></div>
@@ -577,6 +594,127 @@
     trades = [];
     renderTrades();
     renderTradeRosters();
+  }
+
+let lineupData = {};
+
+  async function toggleLineupEditor(index, homeAway, teamCode, opponentCode) {
+    const editor = document.getElementById(`lineup-editor-${index}`);
+    if (editor.style.display !== 'none') {
+      editor.style.display = 'none';
+      return;
+    }
+
+    editor.style.display = 'block';
+    const homeTeam = homeAway === 'Home' ? teamCode : opponentCode;
+    const awayTeam = homeAway === 'Away' ? teamCode : opponentCode;
+
+    document.getElementById(`home-label-${index}`).textContent = `${teamNames[homeTeam] || homeTeam} Lineup`;
+    document.getElementById(`away-label-${index}`).textContent = `${teamNames[awayTeam] || awayTeam} Lineup`;
+
+    document.getElementById(`home-lineup-${index}`).innerHTML = '<p class="loading">Loading...</p>';
+    document.getElementById(`away-lineup-${index}`).innerHTML = '<p class="loading">Loading...</p>';
+
+    const [homeHitters, awayHitters] = await Promise.all([
+      fetch(`${API}/hitters/${homeTeam}`).then(r => r.json()),
+      fetch(`${API}/hitters/${awayTeam}`).then(r => r.json())
+    ]);
+
+    lineupData[index] = { homeHitters: homeHitters.hitters, awayHitters: awayHitters.hitters, homeTeam, awayTeam };
+
+    document.getElementById(`home-lineup-${index}`).innerHTML = buildLineupSelects(homeHitters.hitters, `home-slot-${index}`);
+    document.getElementById(`away-lineup-${index}`).innerHTML = buildLineupSelects(awayHitters.hitters, `away-slot-${index}`);
+  }
+
+  function buildLineupSelects(hitters, prefix) {
+    return Array.from({length: 9}, (_, i) => `
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+        <span style="color:#888; font-size:0.8rem; width:16px;">${i+1}.</span>
+        <select id="${prefix}-${i}" style="flex:1; background:#1a1d2e; color:#e0e0e0; border:1px solid #3a3d4e; padding:4px 8px; border-radius:4px; font-size:0.82rem;">
+          <option value="">-- Pick player --</option>
+          ${hitters.map(p => `<option value="${p.id}" data-name="${p.name}" data-pos="${p.position}" data-type="${p.position_type}">${p.name} (${p.position})</option>`).join('')}
+        </select>
+      </div>
+    `).join('');
+  }
+
+  async function runPredictionWithLineup(index, gameDate, gameId, homeAway, teamCode, opponentCode) {
+    const predDiv = document.getElementById(`prediction-${index}`);
+    predDiv.style.display = 'block';
+    predDiv.innerHTML = '<p class="loading">Running prediction with custom lineup...</p>';
+
+    const data = lineupData[index];
+    if (!data) { predDiv.innerHTML = '<p class="no-game">Please open the lineup editor first.</p>'; return; }
+
+    const homeTeam = data.homeTeam;
+    const awayTeam = data.awayTeam;
+
+    const buildLineup = (prefix) => {
+      const lineup = [];
+      for (let i = 0; i < 9; i++) {
+        const select = document.getElementById(`${prefix}-${i}`);
+        if (!select || !select.value) continue;
+        const opt = select.options[select.selectedIndex];
+        lineup.push({
+          id: parseInt(select.value),
+          name: opt.dataset.name,
+          position: opt.dataset.pos,
+          position_type: opt.dataset.type,
+          status: "Active",
+          il: false
+        });
+      }
+      return lineup;
+    };
+
+    const homeLineup = buildLineup(`home-slot-${index}`);
+    const awayLineup = buildLineup(`away-slot-${index}`);
+
+    if (homeLineup.length === 0 && awayLineup.length === 0) {
+      predDiv.innerHTML = '<p class="no-game">Please select at least some players before predicting.</p>';
+      return;
+    }
+
+    const result = await fetch(`${API}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        home_team: homeTeam,
+        away_team: awayTeam,
+        game_date: gameDate,
+        game_id: gameId,
+        manual_home_lineup: homeLineup.length > 0 ? homeLineup : null,
+        manual_away_lineup: awayLineup.length > 0 ? awayLineup : null
+      })
+    }).then(r => r.json());
+
+    const homeTeamName = teamNames[homeTeam] || homeTeam;
+    const awayTeamName = teamNames[awayTeam] || awayTeam;
+    const homeWin = result.home_win_pct;
+    const awayWin = result.away_win_pct;
+    const favored = homeWin >= awayWin ? homeTeamName : awayTeamName;
+    const favPct = homeWin >= awayWin ? homeWin : awayWin;
+
+    predDiv.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div style="text-align:center; flex:1;">
+          <div style="font-size:1.8rem; font-weight:700; color:#4fc3f7;">${homeWin}%</div>
+          <div style="font-size:0.85rem; color:#888;">${homeTeamName}</div>
+        </div>
+        <div style="text-align:center; padding:0 16px;">
+          <div style="font-size:0.8rem; color:#666;">WIN PROBABILITY</div>
+        </div>
+        <div style="text-align:center; flex:1;">
+          <div style="font-size:1.8rem; font-weight:700; color:#4fc3f7;">${awayWin}%</div>
+          <div style="font-size:0.85rem; color:#888;">${awayTeamName}</div>
+        </div>
+      </div>
+      <div style="background:#1a1d2e; border-radius:6px; height:8px; overflow:hidden; margin-bottom:12px;">
+        <div style="background:#4fc3f7; height:100%; width:${homeWin}%;"></div>
+      </div>
+      <p style="text-align:center; font-size:0.85rem; color:#aaa;">🏆 Model favors <strong>${favored}</strong> at ${favPct}%</p>
+      <p style="text-align:center; font-size:0.75rem; color:#555; margin-top:6px;">Data source: ${result.lineup_source === 'mlb_api' ? '✅ Official MLB lineup' : result.lineup_source === 'manual' ? '✏️ Manual lineup' : '📋 Full roster'}</p>
+    `;
   }
 
   loadTradesFromServer();
