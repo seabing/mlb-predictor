@@ -198,3 +198,29 @@ def get_lineup(game_id):
         }
 
     return result
+
+def get_last_lineup(team_code):
+    team_id = TEAM_IDS.get(team_code.upper())
+    if not team_id:
+        return {"error": f"Team code '{team_code}' not found"}
+
+    from datetime import date, timedelta
+    # Look back up to 7 days to find the last completed game
+    for days_back in range(1, 8):
+        check_date = (date.today() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        url = f"{BASE_URL}/schedule?sportId=1&teamId={team_id}&date={check_date}"
+        resp = requests.get(url).json()
+        for date_entry in resp.get("dates", []):
+            for game in date_entry.get("games", []):
+                if game["status"]["detailedState"] == "Final":
+                    game_id = game["gamePk"]
+                    lineup = get_lineup(game_id)
+                    # Figure out if team was home or away
+                    home_id = game["teams"]["home"]["team"]["id"]
+                    side = "home" if home_id == team_id else "away"
+                    return {
+                        "lineup": lineup.get(side, {}).get("lineup", []),
+                        "game_id": game_id,
+                        "date": check_date
+                    }
+    return {"lineup": [], "game_id": None, "date": None}

@@ -625,10 +625,21 @@ let lineupData = {};
 // Try to fetch actual lineup for this game
     let homeLineupOrder = [];
     let awayLineupOrder = [];
+    const gameId = upcomingGames[index].game_id;
     try {
-      const gameLineup = await fetch(`${API}/lineup/${lineupData[index]?.gameId || 0}`).then(r => r.json());
-      if (gameLineup.home?.lineup_available) homeLineupOrder = gameLineup.home.lineup;
-      if (gameLineup.away?.lineup_available) awayLineupOrder = gameLineup.away.lineup;
+      const gameLineup = await fetch(`${API}/lineup/${gameId}`).then(r => r.json());
+      if (gameLineup.home?.lineup_available) {
+        homeLineupOrder = gameLineup.home.lineup;
+      } else {
+        const lastHome = await fetch(`${API}/last-lineup/${homeTeam}`).then(r => r.json());
+        homeLineupOrder = lastHome.lineup || [];
+      }
+      if (gameLineup.away?.lineup_available) {
+        awayLineupOrder = gameLineup.away.lineup;
+      } else {
+        const lastAway = await fetch(`${API}/last-lineup/${awayTeam}`).then(r => r.json());
+        awayLineupOrder = lastAway.lineup || [];
+      }
     } catch(e) {}
 
     document.getElementById(`home-lineup-${index}`).innerHTML = buildLineupSelects(homeHitters.hitters, `home-slot-${index}`);

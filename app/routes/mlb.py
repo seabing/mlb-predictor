@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from app.services.mlb import get_roster, get_schedule, get_upcoming, get_lineup
+from app.services.mlb import get_roster, get_schedule, get_upcoming, get_lineup, get_last_lineup
 from app.services.trades import get_trades, add_trade, reset_trades
 from app.services.predict import predict_game
 
@@ -42,6 +42,10 @@ def hitters(team_code: str):
         return result
     hitters = [p for p in result["roster"] if p["position_type"] != "Pitcher" and p["status"] == "Active"]
     return {"team": team_code, "hitters": hitters}
+
+@router.get("/last-lineup/{team_code}")
+def last_lineup(team_code: str):
+    return get_last_lineup(team_code)
 
 @router.post("/predict")
 async def predict(request: Request):
