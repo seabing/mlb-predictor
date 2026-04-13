@@ -620,10 +620,29 @@ let lineupData = {};
       fetch(`${API}/hitters/${awayTeam}`).then(r => r.json())
     ]);
 
-    lineupData[index] = { homeHitters: homeHitters.hitters, awayHitters: awayHitters.hitters, homeTeam, awayTeam };
+    lineupData[index] = { homeHitters: homeHitters.hitters, awayHitters: awayHitters.hitters, homeTeam, awayTeam, gameId: upcomingGames[index].game_id };
+
+// Try to fetch actual lineup for this game
+    let homeLineupOrder = [];
+    let awayLineupOrder = [];
+    try {
+      const gameLineup = await fetch(`${API}/lineup/${lineupData[index]?.gameId || 0}`).then(r => r.json());
+      if (gameLineup.home?.lineup_available) homeLineupOrder = gameLineup.home.lineup;
+      if (gameLineup.away?.lineup_available) awayLineupOrder = gameLineup.away.lineup;
+    } catch(e) {}
 
     document.getElementById(`home-lineup-${index}`).innerHTML = buildLineupSelects(homeHitters.hitters, `home-slot-${index}`);
     document.getElementById(`away-lineup-${index}`).innerHTML = buildLineupSelects(awayHitters.hitters, `away-slot-${index}`);
+
+    // Pre-populate dropdowns with actual lineup
+    homeLineupOrder.forEach((player, i) => {
+      const select = document.getElementById(`home-slot-${index}-${i}`);
+      if (select) select.value = player.id;
+    });
+    awayLineupOrder.forEach((player, i) => {
+      const select = document.getElementById(`away-slot-${index}-${i}`);
+      if (select) select.value = player.id;
+    });
   }
 
   function buildLineupSelects(hitters, prefix) {
