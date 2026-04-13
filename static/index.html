@@ -415,7 +415,7 @@
           <div class="vs">${g.home_away === 'Home' ? 'vs' : '@'}</div>
           <div style="font-size:0.8rem; color:#888; margin-top:4px;">${g.date}</div>
           <div style="font-size:0.75rem; color:#666;">${g.status}</div>
-          <button class="trade-btn" style="margin-top:8px;" onclick="runPrediction(${i}, '${g.date}')">Predict</button>
+          <button class="trade-btn" style="margin-top:8px;" onclick="runPrediction(${i}, '${g.date}', ${g.game_id})">Predict</button>
         </div>
         <div class="team-side">
           <h3>${g.opponent}</h3>
@@ -427,7 +427,7 @@
     document.getElementById('upcomingContent').innerHTML = rows;
   }
 
-  async function runPrediction(index, gameDate) {
+  async function runPrediction(index, gameDate, gameId) {
     const game = upcomingGames[index];
     const predDiv = document.getElementById(`prediction-${index}`);
     predDiv.style.display = 'block';
@@ -443,7 +443,7 @@
         home_team: homeTeam,
         away_team: awayTeam,
         game_date: gameDate,
-        game_id: g.game_id
+        game_id: gameId
       })
     }).then(r => r.json());
 
