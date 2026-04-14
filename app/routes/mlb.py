@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 from app.services.mlb import get_roster, get_schedule, get_upcoming, get_lineup, get_last_lineup
 from app.services.trades import get_trades, add_trade, reset_trades
 from app.services.predict import predict_game
+from app.services.predict import load_weights, save_weights, DEFAULT_HIT_WEIGHTS, DEFAULT_PITCH_WEIGHTS, DEFAULT_BALANCE
 
 router = APIRouter()
 
@@ -46,6 +47,26 @@ def hitters(team_code: str):
 @router.get("/last-lineup/{team_code}")
 def last_lineup(team_code: str):
     return get_last_lineup(team_code)
+
+@router.get("/weights")
+def get_weights():
+    return load_weights()
+
+@router.post("/weights")
+async def update_weights(request: Request):
+    payload = await request.json()
+    save_weights(payload)
+    return {"status": "saved"}
+
+@router.post("/weights/reset")
+def reset_weights():
+    weights = {
+        "hit_weights": DEFAULT_HIT_WEIGHTS,
+        "pitch_weights": DEFAULT_PITCH_WEIGHTS,
+        "balance": DEFAULT_BALANCE
+    }
+    save_weights(weights)
+    return {"status": "reset"}
 
 @router.post("/predict")
 async def predict(request: Request):
@@ -116,7 +137,8 @@ async def predict(request: Request):
         print(f"Predicting: {home_team} vs {away_team} | Source: {lineup_source}")
         print(f"Home pitcher: {home_pitcher_id}, Away pitcher: {away_pitcher_id}")
 
-        result = predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id)
+        home_team_id = get_roster(home_team).get("team_id", 0)
+        result = predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id, home_team_id)
         result["lineup_source"] = lineup_source
         return result
 

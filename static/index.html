@@ -56,10 +56,11 @@
 
 <header>
   <h1>⚾ MLB Predictor</h1>
-  <nav>
+<nav>
     <button class="active" onclick="showPage('roster', this)">Roster</button>
     <button onclick="showPage('matchup', this)">Matchup</button>
     <button onclick="showPage('trades', this)">Trade Simulator</button>
+    <button onclick="showPage('settings', this)">Model Settings</button>
   </nav>
 </header>
 
@@ -265,6 +266,30 @@
     </div>
   </div>
 
+<!-- SETTINGS PAGE -->
+  <div class="page" id="page-settings">
+    <div class="section">
+      <h2>Model Settings — Hitting Weights</h2>
+      <p style="font-size:0.85rem; color:#888; margin-bottom:20px;">Adjust how much each hitting stat influences the prediction. Positive = helps offense, Negative = hurts offense.</p>
+      <div id="hit-sliders"></div>
+    </div>
+    <div class="section">
+      <h2>Model Settings — Pitching Weights</h2>
+      <p style="font-size:0.85rem; color:#888; margin-bottom:20px;">Negative values mean lower is better (e.g. ERA, WHIP).</p>
+      <div id="pitch-sliders"></div>
+    </div>
+    <div class="section">
+      <h2>Model Settings — Balance</h2>
+      <p style="font-size:0.85rem; color:#888; margin-bottom:20px;">Control how offense, pitching, batter vs pitcher history, and park factors are weighted.</p>
+      <div id="balance-sliders"></div>
+    </div>
+    <div style="display:flex; gap:12px; margin-bottom:24px;">
+      <button class="trade-btn" onclick="saveWeights()">💾 Save Weights</button>
+      <button class="trade-btn-danger" onclick="resetWeights()">↺ Reset to Defaults</button>
+    </div>
+    <div id="weights-status" style="font-size:0.85rem; color:#4fc3f7; display:none; margin-bottom:24px;"></div>
+  </div>
+
 </div>
 
 <script>
@@ -297,6 +322,7 @@
     document.getElementById('page-' + name).classList.add('active');
     if (btn) btn.classList.add('active');
     if (name === 'trades') loadTradesFromServer();
+    if (name === 'settings') loadWeights();
   }
 
   // ROSTER PAGE
@@ -745,6 +771,99 @@ let lineupData = {};
       <p style="text-align:center; font-size:0.85rem; color:#aaa;">🏆 Model favors <strong>${favored}</strong> at ${favPct}%</p>
       <p style="text-align:center; font-size:0.75rem; color:#555; margin-top:6px;">Data source: ${result.lineup_source === 'mlb_api' ? '✅ Official MLB lineup' : result.lineup_source === 'manual' ? '✏️ Manual lineup' : '📋 Full roster'}</p>
     `;
+  }
+
+// SETTINGS PAGE
+  let currentWeights = {};
+
+  const hitLabels = {
+    obp: "OBP (On Base %)",
+    slg: "SLG (Slugging %)",
+    woba: "wOBA",
+    avg: "AVG (Batting Average)",
+    iso: "ISO (Isolated Power)",
+    bb_pct: "BB% (Walk Rate)",
+    k_pct: "K% (Strikeout Rate)",
+    babip: "BABIP"
+  };
+
+  const pitchLabels = {
+    fip: "FIP",
+    era: "ERA",
+    whip: "WHIP",
+    k9: "K/9",
+    k_bb_pct: "K-BB%",
+    bb9: "BB/9",
+    gb_pct: "GB% (Ground Ball Rate)"
+  };
+
+  const balanceLabels = {
+    offense_weight: "Offense Weight",
+    pitching_weight: "Pitching Weight",
+    bvp_weight: "Batter vs Pitcher History Weight",
+    park_factor_weight: "Park Factor Weight"
+  };
+
+  async function loadWeights() {
+    const resp = await fetch(`${API}/weights`);
+    currentWeights = await resp.json();
+    renderSliders('hit-sliders', currentWeights.hit_weights, hitLabels, -0.5, 0.5);
+    renderSliders('pitch-sliders', currentWeights.pitch_weights, pitchLabels, -0.5, 0.5);
+    renderSliders('balance-sliders', currentWeights.balance, balanceLabels, 0, 1);
+  }
+
+  function renderSliders(containerId, weights, labels, min, max) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = Object.entries(weights).map(([key, val]) => `
+      <div style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <label style="font-size:0.88rem; color:#ccc;">${labels[key] || key}</label>
+          <span id="val-${key}" style="font-size:0.88rem; color:#4fc3f7; font-weight:600;">${val.toFixed(2)}</span>
+        </div>
+        <input type="range" id="slider-${key}" min="${min}" max="${max}" step="0.01" value="${val}"
+          style="width:100%; accent-color:#4fc3f7;"
+          oninput="document.getElementById('val-${key}').textContent = parseFloat(this.value).toFixed(2)"/>
+      </div>
+    `).join('');
+  }
+
+  async function saveWeights() {
+    const getSliderValues = (weights) => {
+      const result = {};
+      Object.keys(weights).forEach(key => {
+        const slider = document.getElementById(`slider-${key}`);
+        if (slider) result[key] = parseFloat(slider.value);
+      });
+      return result;
+    };
+
+    const newWeights = {
+      hit_weights: getSliderValues(currentWeights.hit_weights),
+      pitch_weights: getSliderValues(currentWeights.pitch_weights),
+      balance: getSliderValues(currentWeights.balance)
+    };
+
+    await fetch(`${API}/weights`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newWeights)
+    });
+
+    currentWeights = newWeights;
+    const status = document.getElementById('weights-status');
+    status.style.display = 'block';
+    status.textContent = '✅ Weights saved successfully!';
+    setTimeout(() => status.style.display = 'none', 3000);
+  }
+
+  async function resetWeights() {
+    if (!confirm('Reset all weights to defaults?')) return;
+    await fetch(`${API}/weights/reset`, { method: 'POST' });
+    await loadWeights();
+    const status = document.getElementById('weights-status');
+    status.style.display = 'block';
+    status.textContent = '✅ Weights reset to defaults!';
+    setTimeout(() => status.style.display = 'none', 3000);
   }
 
   loadTradesFromServer();
