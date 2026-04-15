@@ -1,4 +1,4 @@
-from app.services.stats import get_hitting_stats, get_pitching_stats, get_batter_vs_pitcher, blend_hitting, blend_pitching
+from app.services.stats import get_hitting_stats, get_pitching_stats, get_hitting_splits, get_batter_vs_pitcher, get_bullpen_era, get_recent_form, blend_hitting, blend_pitching
 import json
 import os
 
@@ -26,8 +26,10 @@ DEFAULT_PITCH_WEIGHTS = {
 }
 
 DEFAULT_BALANCE = {
-    "offense_weight": 0.55,
-    "pitching_weight": 0.45,
+    "offense_weight": 0.50,
+    "pitching_weight": 0.35,
+    "bullpen_weight": 0.08,
+    "recent_form_weight": 0.05,
     "bvp_weight": 0.15,
     "park_factor_weight": 0.05
 }
@@ -106,7 +108,7 @@ def normalize(value, low, high):
         return 0.5
     return max(0, min(1, (value - low) / (high - low)))
 
-def score_lineup(roster, pitcher_id=0, weights=None):
+def score_lineup(roster, pitcher_id=0, weights=None, split="home"):
     if weights is None:
         weights = load_weights()
     hit_weights = weights["hit_weights"]
@@ -116,7 +118,9 @@ def score_lineup(roster, pitcher_id=0, weights=None):
     hitters = [p for p in roster if p["position_type"] != "Pitcher" and p["status"] == "Active"]
 
     for player in hitters:
-        stats = get_hitting_stats(player["id"])
+        # Try home/away split first, fall back to season stats
+        split_stats = get_hitting_splits(player["id"], split)
+        stats = split_stats if split_stats else get_hitting_stats(player["id"])
         blended = blend_hitting(stats)
         if not blended:
             continue
@@ -169,11 +173,21 @@ def predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id, hom
     weights = load_weights()
     balance = weights["balance"]
 
-    # Score lineups with batter vs pitcher history
-    home_hit = score_lineup(home_roster, away_pitcher_id, weights)
-    away_hit = score_lineup(away_roster, home_pitcher_id, weights)
+    # Score lineups with home/away splits and batter vs pitcher history
+    home_hit = score_lineup(home_roster, away_pitcher_id, weights, split="home")
+    away_hit = score_lineup(away_roster, home_pitcher_id, weights, split="away")
     home_pitch = score_pitcher(home_pitcher_id, weights)
     away_pitch = score_pitcher(away_pitcher_id, weights)
+
+    # Bullpen ERA (lower is better, normalize 2.5-5.5)
+    home_bullpen_era = get_bullpen_era(home_team_id) if home_team_id else 4.20
+    away_bullpen_era = get_bullpen_era(away_team_id) if away_team_id else 4.20
+    home_bullpen_score = 1 - normalize(home_bullpen_era, 2.5, 5.5)
+    away_bullpen_score = 1 - normalize(away_bullpen_era, 2.5, 5.5)
+
+    # Recent form (win_pct over last 10)
+    home_form = get_recent_form(home_team_id)["win_pct"] if home_team_id else 0.5
+    away_form = get_recent_form(away_team_id)["win_pct"] if away_team_id else 0.5
 
     # Park factor
     home_park = PARK_FACTORS.get(home_team_id, 1.0)
@@ -181,14 +195,16 @@ def predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id, hom
     home_pitch_adj = home_pitch + 0.5
     away_pitch_adj = away_pitch + 0.5
 
-    off_w = balance.get("offense_weight", 0.55)
-    pit_w = balance.get("pitching_weight", 0.45)
-
-    home_score = (home_hit * off_w) + (home_pitch_adj * pit_w)
-    away_score = (away_hit * off_w) + (away_pitch_adj * pit_w)
-
-    # Apply park factor — boosts home offense, reduces away offense
+    off_w = balance.get("offense_weight", 0.50)
+    pit_w = balance.get("pitching_weight", 0.35)
+    bull_w = balance.get("bullpen_weight", 0.08)
+    form_w = balance.get("recent_form_weight", 0.05)
     pf_w = balance.get("park_factor_weight", 0.05)
+
+    home_score = (home_hit * off_w) + (home_pitch_adj * pit_w) + (home_bullpen_score * bull_w) + (home_form * form_w)
+    away_score = (away_hit * off_w) + (away_pitch_adj * pit_w) + (away_bullpen_score * bull_w) + (away_form * form_w)
+
+    # Apply park factor
     home_score = home_score * (1 + (home_park - 1) * pf_w * 10)
     away_score = away_score * (1 - (home_park - 1) * pf_w * 5)
 
@@ -206,5 +222,9 @@ def predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id, hom
         "away_offense_score": round(away_hit, 4),
         "home_pitcher_score": round(home_pitch, 4),
         "away_pitcher_score": round(away_pitch, 4),
+        "home_bullpen_era": home_bullpen_era,
+        "away_bullpen_era": away_bullpen_era,
+        "home_form": home_form,
+        "away_form": away_form,
         "park_factor": home_park
     }

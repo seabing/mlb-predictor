@@ -68,6 +68,25 @@ def reset_weights():
     save_weights(weights)
     return {"status": "reset"}
 
+@router.get("/bullpen/{team_code}")
+def bullpen(team_code: str):
+    from app.services.stats import get_bullpen_era
+    result = get_roster(team_code)
+    if "error" in result:
+        return result
+    team_id = result["team_id"]
+    era = get_bullpen_era(team_id)
+    return {"team": team_code, "bullpen_era": era}
+
+@router.get("/form/{team_code}")
+def form(team_code: str):
+    from app.services.stats import get_recent_form
+    result = get_roster(team_code)
+    if "error" in result:
+        return result
+    team_id = result["team_id"]
+    return get_recent_form(team_id)
+
 @router.post("/predict")
 async def predict(request: Request):
     try:
@@ -137,8 +156,9 @@ async def predict(request: Request):
         print(f"Predicting: {home_team} vs {away_team} | Source: {lineup_source}")
         print(f"Home pitcher: {home_pitcher_id}, Away pitcher: {away_pitcher_id}")
 
-        home_team_id = get_roster(home_team).get("team_id", 0)
-        result = predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id, home_team_id)
+        home_team_id = home_result.get("team_id", 0)
+        away_team_id = away_result.get("team_id", 0)
+        result = predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id, home_team_id, away_team_id)
         result["lineup_source"] = lineup_source
         return result
 

@@ -146,3 +146,102 @@ def blend_pitching(stats):
         for key in blended:
             blended[key] += s[key] * w
     return blended
+
+def get_hitting_splits(player_id, split="home"):
+    """Get home or away splits for a hitter"""
+    stats = {}
+    for season, weight in [(2025, WEIGHT_2025), (2026, WEIGHT_2026)]:
+        url = f"{BASE_URL}/people/{player_id}/stats?stats=homeAndAway&group=hitting&season={season}"
+        resp = requests.get(url).json()
+        stat_list = resp.get("stats", [])
+        if not stat_list:
+            continue
+        splits = stat_list[0].get("splits", [])
+        for s in splits:
+            if s.get("split", {}).get("code", "").lower() == split.lower():
+                stat = s.get("stat", {})
+                ab = max(int(stat.get("atBats", 1) or 1), 1)
+                pa = max(int(stat.get("plateAppearances", 1) or 1), 1)
+                hits = int(stat.get("hits", 0) or 0)
+                doubles = int(stat.get("doubles", 0) or 0)
+                triples = int(stat.get("triples", 0) or 0)
+                hr = int(stat.get("homeRuns", 0) or 0)
+                bb = int(stat.get("baseOnBalls", 0) or 0)
+                so = int(stat.get("strikeOuts", 0) or 0)
+                hbp = int(stat.get("hitByPitch", 0) or 0)
+                sf = int(stat.get("sacFlies", 0) or 0)
+                slg = float(stat.get("slg", 0) or 0)
+                avg = float(stat.get("avg", 0) or 0)
+
+                woba_num = (0.69*bb + 0.72*hbp + 0.888*(hits-doubles-triples-hr) +
+                            1.271*doubles + 1.616*triples + 2.101*hr)
+                woba_den = max(ab + bb + sf + hbp, 1)
+                woba = woba_num / woba_den
+                iso = slg - avg
+                babip_den = max(ab - so - hr + sf, 1)
+                babip = (hits - hr) / babip_den
+
+def get_bullpen_era(team_id):
+    """Get team pitching ERA blended across 2025 and 2026"""
+    season_eras = []
+    weights = [(2025, 0.80), (2026, 0.20)]
+
+    for season, weight in weights:
+        url = f"https://statsapi.mlb.com/api/v1/teams/{team_id}/stats?stats=season&group=pitching&season={season}"
+        resp = requests.get(url).json()
+        stat_list = resp.get("stats", [])
+        if not stat_list:
+            continue
+        splits = stat_list[0].get("splits", [])
+        if not splits:
+            continue
+        era = float(splits[0].get("stat", {}).get("era", 0) or 0)
+        if era > 0:
+            season_eras.append((era, weight))
+
+    if not season_eras:
+        return 4.20
+
+    total_weight = sum(w for _, w in season_eras)
+    blended = sum(era * w for era, w in season_eras) / total_weight
+    return round(blended, 2)
+
+    if not season_eras:
+        return 4.20  # league average fallback
+
+    total_weight = sum(w for _, w in season_eras)
+    blended = sum(era * w for era, w in season_eras) / total_weight
+    return round(blended, 2)
+
+def get_recent_form(team_id, games=10):
+    """Get win/loss record for last N games"""
+    from datetime import date, timedelta
+    end = date.today().strftime("%Y-%m-%d")
+    start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId={team_id}&startDate={start}&endDate={end}&gameType=R"
+    resp = requests.get(url).json()
+
+    results = []
+    for date_entry in resp.get("dates", []):
+        for game in date_entry.get("games", []):
+            if game["status"]["detailedState"] != "Final":
+                continue
+            home = game["teams"]["home"]
+            away = game["teams"]["away"]
+            is_home = home["team"]["id"] == team_id
+            our_side = home if is_home else away
+            won = our_side.get("isWinner", False)
+            results.append(1 if won else 0)
+
+    results = results[-games:]
+    wins = sum(results)
+    losses = len(results) - wins
+    win_pct = wins / max(len(results), 1)
+
+    return {
+        "wins": wins,
+        "losses": losses,
+        "games": len(results),
+        "win_pct": round(win_pct, 3)
+    }

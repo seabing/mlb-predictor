@@ -497,6 +497,8 @@ function renderUpcoming() {
     const favored = homeWin >= awayWin ? homeTeamName : awayTeamName;
     const favPct = homeWin >= awayWin ? homeWin : awayWin;
 
+const homeFormPct = result.home_form ? Math.round(result.home_form * 100) : '—';
+    const awayFormPct = result.away_form ? Math.round(result.away_form * 100) : '—';
     predDiv.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <div style="text-align:center; flex:1;">
@@ -515,9 +517,33 @@ function renderUpcoming() {
         <div style="background:#4fc3f7; height:100%; width:${homeWin}%;"></div>
       </div>
       <p style="text-align:center; font-size:0.85rem; color:#aaa;">🏆 Model favors <strong>${favored}</strong> at ${favPct}%</p>
-      <p style="text-align:center; font-size:0.75rem; color:#555; margin-top:6px;">Data source: ${result.lineup_source === 'mlb_api' ? '✅ Official MLB lineup' : result.lineup_source === 'manual' ? '✏️ Manual lineup' : '📋 Full roster'}</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;">
+        <div style="background:#1a1d2e; border-radius:6px; padding:10px; font-size:0.8rem;">
+          <div style="color:#888; margin-bottom:4px;">Offense Score</div>
+          <div>${homeTeamName}: <span style="color:#4fc3f7;">${result.home_offense_score}</span></div>
+          <div>${awayTeamName}: <span style="color:#4fc3f7;">${result.away_offense_score}</span></div>
+        </div>
+        <div style="background:#1a1d2e; border-radius:6px; padding:10px; font-size:0.8rem;">
+          <div style="color:#888; margin-bottom:4px;">Starter Score</div>
+          <div>${homeTeamName}: <span style="color:#4fc3f7;">${result.home_pitcher_score}</span></div>
+          <div>${awayTeamName}: <span style="color:#4fc3f7;">${result.away_pitcher_score}</span></div>
+        </div>
+        <div style="background:#1a1d2e; border-radius:6px; padding:10px; font-size:0.8rem;">
+          <div style="color:#888; margin-bottom:4px;">Bullpen ERA</div>
+          <div>${homeTeamName}: <span style="color:#4fc3f7;">${result.home_bullpen_era || '—'}</span></div>
+          <div>${awayTeamName}: <span style="color:#4fc3f7;">${result.away_bullpen_era || '—'}</span></div>
+        </div>
+        <div style="background:#1a1d2e; border-radius:6px; padding:10px; font-size:0.8rem;">
+          <div style="color:#888; margin-bottom:4px;">Last 10 Games</div>
+          <div>${homeTeamName}: <span style="color:#4fc3f7;">${homeFormPct}% W</span></div>
+          <div>${awayTeamName}: <span style="color:#4fc3f7;">${awayFormPct}% W</span></div>
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; justify-content:space-between; font-size:0.75rem; color:#555;">
+        <span>Park factor: ${result.park_factor || '1.00'}</span>
+        <span>Data: ${result.lineup_source === 'mlb_api' ? '✅ Official lineup' : result.lineup_source === 'manual' ? '✏️ Manual lineup' : '📋 Full roster'}</span>
+      </div>
     `;
-  }
 
   // TRADE SIMULATOR
   async function loadTradesFromServer() {
@@ -751,6 +777,8 @@ let lineupData = {};
     const favored = homeWin >= awayWin ? homeTeamName : awayTeamName;
     const favPct = homeWin >= awayWin ? homeWin : awayWin;
 
+const homeFormPct = result.home_form ? Math.round(result.home_form * 100) : '—';
+    const awayFormPct = result.away_form ? Math.round(result.away_form * 100) : '—';
     predDiv.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <div style="text-align:center; flex:1;">
@@ -769,9 +797,33 @@ let lineupData = {};
         <div style="background:#4fc3f7; height:100%; width:${homeWin}%;"></div>
       </div>
       <p style="text-align:center; font-size:0.85rem; color:#aaa;">🏆 Model favors <strong>${favored}</strong> at ${favPct}%</p>
-      <p style="text-align:center; font-size:0.75rem; color:#555; margin-top:6px;">Data source: ${result.lineup_source === 'mlb_api' ? '✅ Official MLB lineup' : result.lineup_source === 'manual' ? '✏️ Manual lineup' : '📋 Full roster'}</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;">
+        <div style="background:#1a1d2e; border-radius:6px; padding:10px; font-size:0.8rem;">
+          <div style="color:#888; margin-bottom:4px;">Offense Score</div>
+          <div>${homeTeamName}: <span style="color:#4fc3f7;">${result.home_offense_score}</span></div>
+          <div>${awayTeamName}: <span style="color:#4fc3f7;">${result.away_offense_score}</span></div>
+        </div>
+        <div style="background:#1a1d2e; border-radius:6px; padding:10px; font-size:0.8rem;">
+          <div style="color:#888; margin-bottom:4px;">Starter Score</div>
+          <div>${homeTeamName}: <span style="color:#4fc3f7;">${result.home_pitcher_score}</span></div>
+          <div>${awayTeamName}: <span style="color:#4fc3f7;">${result.away_pitcher_score}</span></div>
+        </div>
+        <div style="background:#1a1d2e; border-radius:6px; padding:10px; font-size:0.8rem;">
+          <div style="color:#888; margin-bottom:4px;">Bullpen ERA</div>
+          <div>${homeTeamName}: <span style="color:#4fc3f7;">${result.home_bullpen_era || '—'}</span></div>
+          <div>${awayTeamName}: <span style="color:#4fc3f7;">${result.away_bullpen_era || '—'}</span></div>
+        </div>
+        <div style="background:#1a1d2e; border-radius:6px; padding:10px; font-size:0.8rem;">
+          <div style="color:#888; margin-bottom:4px;">Last 10 Games</div>
+          <div>${homeTeamName}: <span style="color:#4fc3f7;">${homeFormPct}% W</span></div>
+          <div>${awayTeamName}: <span style="color:#4fc3f7;">${awayFormPct}% W</span></div>
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; justify-content:space-between; font-size:0.75rem; color:#555;">
+        <span>Park factor: ${result.park_factor || '1.00'}</span>
+        <span>Data: ${result.lineup_source === 'mlb_api' ? '✅ Official lineup' : result.lineup_source === 'manual' ? '✏️ Manual lineup' : '📋 Full roster'}</span>
+      </div>
     `;
-  }
 
 // SETTINGS PAGE
   let currentWeights = {};
