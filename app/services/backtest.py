@@ -36,9 +36,16 @@ HISTORY_FILE = "data/tuning_history.json"
 
 # ---------- date helpers ----------
 
+def last_n_days_from_today(n=30):
+    """Return (start, end) ISO strings spanning the last N days through yesterday.
+    Yesterday is the upper bound because today's games likely aren't final yet."""
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=n - 1)
+    return start.isoformat(), end.isoformat()
+
+
 def last_n_days_of_2025_regular_season(n=30):
-    """Return (start, end) ISO strings spanning the last N days of the
-    2025 regular season (assumed to end 2025-09-28)."""
+    """Kept for backward compat. Last N days of 2025 regular season."""
     end = date(2025, 9, 28)
     start = end - timedelta(days=n - 1)
     return start.isoformat(), end.isoformat()
@@ -361,7 +368,7 @@ def random_search(features_list, n_iter=200, seed=None, base_weights=None):
 def run_backtest(start_date=None, end_date=None, weights=None):
     """Score the given weights (or current saved weights) over the date range."""
     if not start_date or not end_date:
-        start_date, end_date = last_n_days_of_2025_regular_season(30)
+        start_date, end_date = last_n_days_from_today(30)
     print(f"[backtest] {start_date} -> {end_date}")
     games = fetch_finals(start_date, end_date)
     print(f"  {len(games)} finals")
@@ -384,7 +391,7 @@ def run_backtest(start_date=None, end_date=None, weights=None):
 def run_tune(start_date=None, end_date=None, n_iter=200, apply=False, seed=42):
     """Run a backtest + random search; optionally save the best weights."""
     if not start_date or not end_date:
-        start_date, end_date = last_n_days_of_2025_regular_season(30)
+        start_date, end_date = last_n_days_from_today(30)
     print(f"[tune] {start_date} -> {end_date}, n_iter={n_iter}")
     games = fetch_finals(start_date, end_date)
     games = fetch_lineups_for(games)

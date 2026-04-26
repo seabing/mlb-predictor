@@ -324,9 +324,9 @@
     <div class="section">
       <h2>Backtest &amp; Auto-Tune</h2>
       <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
-        Backtest the current weights against the last 30 days of the 2025 regular season,
+        Backtest the current weights against recent finalized games (defaults to the last 30 days through yesterday),
         or run a random search to find better weights (log loss objective).
-        First run takes a couple minutes to fetch lineups; subsequent runs use the local cache.
+        First run takes a few minutes to fetch lineups; subsequent runs use the local cache.
       </p>
       <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
         <label style="font-size:0.85rem;">Iterations:
@@ -334,11 +334,11 @@
             style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; width:90px; margin-left:6px;">
         </label>
         <label style="font-size:0.85rem;">Start:
-          <input id="tuneStart" type="date" value="2025-08-30"
+          <input id="tuneStart" type="date"
             style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; margin-left:6px;">
         </label>
         <label style="font-size:0.85rem;">End:
-          <input id="tuneEnd" type="date" value="2025-09-28"
+          <input id="tuneEnd" type="date"
             style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; margin-left:6px;">
         </label>
       </div>
@@ -385,8 +385,21 @@
     document.getElementById('page-' + name).classList.add('active');
     if (btn) btn.classList.add('active');
     if (name === 'trades') loadTradesFromServer();
-    if (name === 'settings') loadWeights();
+    if (name === 'settings') { loadWeights(); fillTuneDates(); }
     if (name === 'predictions') loadPredictions();
+  }
+
+  function fillTuneDates() {
+    const start = document.getElementById('tuneStart');
+    const end = document.getElementById('tuneEnd');
+    if (!start || !end) return;
+    // Default = last 30 days through yesterday (today's games may not be final)
+    const today = new Date();
+    const yesterday = new Date(today.getTime() - 24*60*60*1000);
+    const startDate = new Date(yesterday.getTime() - 29*24*60*60*1000);
+    const fmt = d => d.toISOString().slice(0, 10);
+    if (!start.value) start.value = fmt(startDate);
+    if (!end.value) end.value = fmt(yesterday);
   }
 
   // ROSTER PAGE
