@@ -41,6 +41,18 @@
     .trade-btn-danger:hover { background: #ff4444; color: white; }
     .traded-list { margin-top: 16px; }
     .traded-item { background: #1a1d2e; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; }
+    .today-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+    .today-card { background: #12151f; border-radius: 8px; padding: 14px; border: 1px solid #2a2d3e; }
+    .today-card .matchup { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
+    .today-card .pitchers { font-size: 0.78rem; color: #888; margin-bottom: 10px; }
+    .today-card .bars { display: flex; height: 10px; border-radius: 4px; overflow: hidden; background: #1a1d2e; margin-bottom: 6px; }
+    .today-card .bar-away { background: #4fc3f7; }
+    .today-card .bar-home { background: #f57c00; }
+    .today-card .pcts { display: flex; justify-content: space-between; font-size: 0.78rem; color: #aaa; }
+    .today-card .pick { margin-top: 8px; font-size: 0.82rem; color: #4fc3f7; }
+    .today-card .meta { font-size: 0.72rem; color: #666; margin-top: 4px; }
+    .today-card.error { border-color: #ff4444; }
+    .today-card.error .matchup { color: #ff8888; }
     .page { display: none; }
     .page.active { display: block; }
     @media (max-width: 600px) {
@@ -270,6 +282,16 @@
   <!-- PREDICTIONS PAGE -->
   <div class="page" id="page-predictions">
     <div class="section">
+      <h2>Today's Games</h2>
+      <div style="display:flex; gap:12px; align-items:center; margin-bottom:14px;">
+        <span id="todayDate" style="font-size:0.85rem; color:#888;"></span>
+        <button class="trade-btn" onclick="loadTodayGames(true)">↻ Refresh predictions</button>
+      </div>
+      <div id="todayStatus" style="font-size:0.85rem; color:#4fc3f7; margin-bottom:12px;"></div>
+      <div id="todayGames"><div class="loading">Loading today's games...</div></div>
+    </div>
+
+    <div class="section">
       <h2>Running Accuracy</h2>
       <div id="predSummary" style="display:flex; gap:32px; flex-wrap:wrap; font-size:0.95rem;">
         <div><div style="font-size:0.7rem; color:#888; text-transform:uppercase;">Record</div><div id="predRecord" style="font-size:1.3rem; font-weight:600; color:#4fc3f7;">—</div></div>
@@ -280,7 +302,7 @@
       </div>
       <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap;">
         <button class="trade-btn" onclick="gradePending()">⟳ Grade Pending Games</button>
-        <button class="trade-btn" onclick="loadPredictions()">↻ Refresh</button>
+        <button class="trade-btn" onclick="loadPredictionHistory()">↻ Refresh history</button>
         <button class="trade-btn-danger" onclick="resetPredictions()">Reset All</button>
       </div>
       <div id="predStatus" style="font-size:0.85rem; color:#4fc3f7; margin-top:12px;"></div>
@@ -950,7 +972,77 @@
   loadTradesFromServer();
 
   // ----- PREDICTIONS PAGE -----
+  let todayGamesCache = null;
+
+  async function loadTodayGames(force = false) {
+    const container = document.getElementById('todayGames');
+    const status = document.getElementById('todayStatus');
+    const dateLabel = document.getElementById('todayDate');
+    const today = new Date().toISOString().slice(0, 10);
+    dateLabel.textContent = today;
+
+    if (todayGamesCache && !force) {
+      renderTodayGames(todayGamesCache);
+      return;
+    }
+    status.textContent = 'Predicting all of today\'s games (this can take 1–2 minutes on first load)…';
+    container.innerHTML = '<div class="loading">Running predictions for every matchup…</div>';
+    try {
+      const r = await fetch(`${API}/predict/today`).then(r => r.json());
+      todayGamesCache = r;
+      status.textContent = '';
+      renderTodayGames(r);
+      // Refresh history table since today's games were just logged
+      loadPredictionHistory();
+    } catch (e) {
+      status.textContent = 'Failed: ' + e.message;
+      container.innerHTML = '';
+    }
+  }
+
+  function renderTodayGames(data) {
+    const container = document.getElementById('todayGames');
+    const games = data?.games || [];
+    if (!games.length) {
+      container.innerHTML = '<div class="loading">No MLB games scheduled today.</div>';
+      return;
+    }
+    const cards = games.map(g => {
+      if (g.error) {
+        return `<div class="today-card error">
+          <div class="matchup">${g.away_team || '?'} @ ${g.home_team || '?'}</div>
+          <div class="meta">${g.error}</div>
+        </div>`;
+      }
+      const home = (g.home_win_pct || 50);
+      const away = (g.away_win_pct || 50);
+      const pick = home >= away ? g.home_team : g.away_team;
+      const pickPct = Math.max(home, away).toFixed(1);
+      const time = g.game_time ? new Date(g.game_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+      return `<div class="today-card">
+        <div class="matchup">${g.away_team_name || g.away_team} @ ${g.home_team_name || g.home_team}</div>
+        <div class="pitchers">${g.away_pitcher || 'TBD'} vs ${g.home_pitcher || 'TBD'}</div>
+        <div class="bars">
+          <div class="bar-away" style="width:${away}%"></div>
+          <div class="bar-home" style="width:${home}%"></div>
+        </div>
+        <div class="pcts">
+          <span>${g.away_team} ${away.toFixed(1)}%</span>
+          <span>${home.toFixed(1)}% ${g.home_team}</span>
+        </div>
+        <div class="pick">Pick: <b>${pick}</b> (${pickPct}%) · ${g.lineup_source || 'roster'}</div>
+        <div class="meta">${time} · ${g.venue || ''} · ${g.status || ''}</div>
+      </div>`;
+    }).join('');
+    container.innerHTML = `<div class="today-grid">${cards}</div>`;
+  }
+
   async function loadPredictions() {
+    loadTodayGames(false);
+    loadPredictionHistory();
+  }
+
+  async function loadPredictionHistory() {
     const tbody = document.getElementById('predTable');
     tbody.innerHTML = '<tr><td colspan="7" class="loading">Loading...</td></tr>';
     try {
@@ -1005,7 +1097,7 @@
     try {
       const r = await fetch(`${API}/predictions/grade`, { method: 'POST' }).then(r => r.json());
       status.textContent = `Graded ${r.graded} / Skipped ${r.skipped} (still in progress)`;
-      await loadPredictions();
+      await loadPredictionHistory();
     } catch (e) {
       status.textContent = 'Grade failed: ' + e.message;
     }
@@ -1014,7 +1106,7 @@
   async function resetPredictions() {
     if (!confirm('Delete ALL tracked predictions? This cannot be undone.')) return;
     await fetch(`${API}/predictions`, { method: 'DELETE' });
-    await loadPredictions();
+    await loadPredictionHistory();
   }
 
   // ----- TUNER -----

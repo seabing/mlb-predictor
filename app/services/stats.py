@@ -2,8 +2,8 @@ import requests
 
 BASE_URL = "https://statsapi.mlb.com/api/v1"
 
-WEIGHT_2025 = 0.80
-WEIGHT_2026 = 0.20
+WEIGHT_2025 = 0.25
+WEIGHT_2026 = 0.75
 
 def get_hitting_stats(player_id):
     stats = {}
@@ -184,7 +184,7 @@ def get_hitting_splits(player_id, split="home"):
 def get_bullpen_era(team_id):
     """Get team pitching ERA blended across 2025 and 2026"""
     season_eras = []
-    weights = [(2025, 0.80), (2026, 0.20)]
+    weights = [(2025, WEIGHT_2025), (2026, WEIGHT_2026)]
 
     for season, weight in weights:
         url = f"https://statsapi.mlb.com/api/v1/teams/{team_id}/stats?stats=season&group=pitching&season={season}"
