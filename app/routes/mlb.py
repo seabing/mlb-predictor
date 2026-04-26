@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from app.services.mlb import get_roster, get_schedule, get_upcoming, get_lineup, get_last_lineup
@@ -222,7 +223,8 @@ async def backtest(request: Request):
     payload = await request.json() if (await request.body()) else {}
     start = payload.get("start_date")
     end = payload.get("end_date")
-    return bt.run_backtest(start_date=start, end_date=end)
+    # Run in a worker thread so the event loop stays free for other requests
+    return await asyncio.to_thread(bt.run_backtest, start, end)
 
 
 @router.post("/tune")
@@ -233,7 +235,15 @@ async def tune(request: Request):
     n_iter = int(payload.get("n_iter", 200))
     apply = bool(payload.get("apply", False))
     seed = int(payload.get("seed", 42))
-    return bt.run_tune(start_date=start, end_date=end, n_iter=n_iter, apply=apply, seed=seed)
+    # Validate date range so we don't silently accept reversed inputs
+    if start and end and start > end:
+        return JSONResponse(
+            {"error": f"start_date ({start}) must be before end_date ({end})"},
+            status_code=400,
+        )
+    return await asyncio.to_thread(
+        bt.run_tune, start, end, n_iter, apply, seed
+    )
 
 
 @router.post("/tune/clear-cache")
