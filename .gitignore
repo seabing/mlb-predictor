@@ -3,3 +3,9 @@ __pycache__/
 *.pyo
 .env
 *.env
+
+# runtime / generated data
+data/predictions.db
+data/backtest_cache.json
+data/tuning_history.json
+data/lineups/

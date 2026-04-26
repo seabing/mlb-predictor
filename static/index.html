@@ -59,6 +59,7 @@
   <nav>
     <button class="active" onclick="showPage('roster', this)">Roster</button>
     <button onclick="showPage('matchup', this)">Matchup</button>
+    <button onclick="showPage('predictions', this)">Predictions</button>
     <button onclick="showPage('trades', this)">Trade Simulator</button>
     <button onclick="showPage('settings', this)">Model Settings</button>
   </nav>
@@ -266,6 +267,37 @@
     </div>
   </div>
 
+  <!-- PREDICTIONS PAGE -->
+  <div class="page" id="page-predictions">
+    <div class="section">
+      <h2>Running Accuracy</h2>
+      <div id="predSummary" style="display:flex; gap:32px; flex-wrap:wrap; font-size:0.95rem;">
+        <div><div style="font-size:0.7rem; color:#888; text-transform:uppercase;">Record</div><div id="predRecord" style="font-size:1.3rem; font-weight:600; color:#4fc3f7;">—</div></div>
+        <div><div style="font-size:0.7rem; color:#888; text-transform:uppercase;">Accuracy</div><div id="predAccuracy" style="font-size:1.3rem; font-weight:600; color:#4fc3f7;">—</div></div>
+        <div><div style="font-size:0.7rem; color:#888; text-transform:uppercase;">Log Loss</div><div id="predLogLoss" style="font-size:1.3rem; font-weight:600; color:#4fc3f7;">—</div></div>
+        <div><div style="font-size:0.7rem; color:#888; text-transform:uppercase;">Brier</div><div id="predBrier" style="font-size:1.3rem; font-weight:600; color:#4fc3f7;">—</div></div>
+        <div><div style="font-size:0.7rem; color:#888; text-transform:uppercase;">Pending</div><div id="predPending" style="font-size:1.3rem; font-weight:600; color:#888;">—</div></div>
+      </div>
+      <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="trade-btn" onclick="gradePending()">⟳ Grade Pending Games</button>
+        <button class="trade-btn" onclick="loadPredictions()">↻ Refresh</button>
+        <button class="trade-btn-danger" onclick="resetPredictions()">Reset All</button>
+      </div>
+      <div id="predStatus" style="font-size:0.85rem; color:#4fc3f7; margin-top:12px;"></div>
+    </div>
+
+    <div class="section">
+      <h2>Prediction History</h2>
+      <table>
+        <thead><tr>
+          <th>Date</th><th>Matchup</th><th>Predicted</th><th>Confidence</th>
+          <th>Actual</th><th>Score</th><th>Result</th>
+        </tr></thead>
+        <tbody id="predTable"><tr><td colspan="7" class="loading">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- SETTINGS PAGE -->
   <div class="page" id="page-settings">
     <div class="section">
@@ -288,6 +320,36 @@
       <button class="trade-btn-danger" onclick="resetWeights()">↺ Reset to Defaults</button>
     </div>
     <div id="weights-status" style="font-size:0.85rem; color:#4fc3f7; display:none; margin-bottom:24px;"></div>
+
+    <div class="section">
+      <h2>Backtest &amp; Auto-Tune</h2>
+      <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
+        Backtest the current weights against the last 30 days of the 2025 regular season,
+        or run a random search to find better weights (log loss objective).
+        First run takes a couple minutes to fetch lineups; subsequent runs use the local cache.
+      </p>
+      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <label style="font-size:0.85rem;">Iterations:
+          <input id="tuneIter" type="number" value="200" min="20" max="2000" step="20"
+            style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; width:90px; margin-left:6px;">
+        </label>
+        <label style="font-size:0.85rem;">Start:
+          <input id="tuneStart" type="date" value="2025-08-30"
+            style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; margin-left:6px;">
+        </label>
+        <label style="font-size:0.85rem;">End:
+          <input id="tuneEnd" type="date" value="2025-09-28"
+            style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; margin-left:6px;">
+        </label>
+      </div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <button class="trade-btn" onclick="runBacktest()">▶ Backtest current weights</button>
+        <button class="trade-btn" onclick="runTune(false)">🎯 Tune (preview)</button>
+        <button class="trade-btn" onclick="runTune(true)">🎯 Tune &amp; apply</button>
+      </div>
+      <div id="tuneStatus" style="font-size:0.85rem; color:#888; margin-top:14px;"></div>
+      <pre id="tuneOutput" style="background:#0f1117; color:#9cdcfe; padding:14px; border-radius:8px; font-size:0.8rem; margin-top:14px; max-height:300px; overflow:auto; display:none;"></pre>
+    </div>
   </div>
 
 </div>
@@ -324,6 +386,7 @@
     if (btn) btn.classList.add('active');
     if (name === 'trades') loadTradesFromServer();
     if (name === 'settings') loadWeights();
+    if (name === 'predictions') loadPredictions();
   }
 
   // ROSTER PAGE
@@ -872,6 +935,139 @@
   }
 
   loadTradesFromServer();
+
+  // ----- PREDICTIONS PAGE -----
+  async function loadPredictions() {
+    const tbody = document.getElementById('predTable');
+    tbody.innerHTML = '<tr><td colspan="7" class="loading">Loading...</td></tr>';
+    try {
+      const [summary, list] = await Promise.all([
+        fetch(`${API}/predictions/summary`).then(r => r.json()),
+        fetch(`${API}/predictions?limit=200`).then(r => r.json()),
+      ]);
+      const rec = (summary.total ?? 0)
+        ? `${summary.correct}-${summary.total - summary.correct}` : '—';
+      document.getElementById('predRecord').textContent = rec;
+      document.getElementById('predAccuracy').textContent =
+        summary.accuracy != null ? (summary.accuracy * 100).toFixed(1) + '%' : '—';
+      document.getElementById('predLogLoss').textContent =
+        summary.log_loss != null ? summary.log_loss.toFixed(4) : '—';
+      document.getElementById('predBrier').textContent =
+        summary.brier != null ? summary.brier.toFixed(4) : '—';
+      document.getElementById('predPending').textContent = summary.pending ?? 0;
+
+      const rows = (list.predictions || []).map(p => {
+        const conf = Math.max(p.home_win_pct || 0, p.away_win_pct || 0).toFixed(1) + '%';
+        let result = '';
+        if (p.status === 'graded') {
+          result = p.correct
+            ? '<span class="badge badge-active">✓</span>'
+            : '<span class="badge badge-il">✗</span>';
+        } else {
+          result = '<span class="badge badge-traded">pending</span>';
+        }
+        const score = (p.home_score != null && p.away_score != null)
+          ? `${p.away_score}–${p.home_score}` : '';
+        const actual = p.actual_winner || '';
+        const date = p.game_date || (p.created_at || '').slice(0, 10);
+        return `<tr>
+          <td>${date}</td>
+          <td>${p.away_team} @ ${p.home_team}</td>
+          <td>${p.predicted_winner}</td>
+          <td>${conf}</td>
+          <td>${actual}</td>
+          <td>${score}</td>
+          <td>${result}</td>
+        </tr>`;
+      }).join('');
+      tbody.innerHTML = rows || '<tr><td colspan="7" class="loading">No predictions yet. Make one from the Matchup tab.</td></tr>';
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="7" class="loading">Failed to load: ' + e.message + '</td></tr>';
+    }
+  }
+
+  async function gradePending() {
+    const status = document.getElementById('predStatus');
+    status.textContent = 'Checking final scores...';
+    try {
+      const r = await fetch(`${API}/predictions/grade`, { method: 'POST' }).then(r => r.json());
+      status.textContent = `Graded ${r.graded} / Skipped ${r.skipped} (still in progress)`;
+      await loadPredictions();
+    } catch (e) {
+      status.textContent = 'Grade failed: ' + e.message;
+    }
+  }
+
+  async function resetPredictions() {
+    if (!confirm('Delete ALL tracked predictions? This cannot be undone.')) return;
+    await fetch(`${API}/predictions`, { method: 'DELETE' });
+    await loadPredictions();
+  }
+
+  // ----- TUNER -----
+  async function runBacktest() {
+    const status = document.getElementById('tuneStatus');
+    const out = document.getElementById('tuneOutput');
+    status.textContent = 'Running backtest... (first run pulls lineups, can take a couple minutes)';
+    out.style.display = 'none';
+    try {
+      const body = {
+        start_date: document.getElementById('tuneStart').value || undefined,
+        end_date: document.getElementById('tuneEnd').value || undefined,
+      };
+      const r = await fetch(`${API}/backtest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.json());
+      status.textContent = `Done · ${r.metrics?.n ?? 0} games · log loss ${r.metrics?.log_loss} · acc ${(r.metrics?.accuracy * 100).toFixed(1)}% · brier ${r.metrics?.brier}`;
+      out.textContent = JSON.stringify(r, null, 2);
+      out.style.display = 'block';
+    } catch (e) {
+      status.textContent = 'Backtest failed: ' + e.message;
+    }
+  }
+
+  async function runTune(apply) {
+    const status = document.getElementById('tuneStatus');
+    const out = document.getElementById('tuneOutput');
+    const iter = parseInt(document.getElementById('tuneIter').value || '200', 10);
+    status.textContent = `Tuning ${iter} iterations... this can take a few minutes.`;
+    out.style.display = 'none';
+    try {
+      const body = {
+        n_iter: iter,
+        apply: !!apply,
+        start_date: document.getElementById('tuneStart').value || undefined,
+        end_date: document.getElementById('tuneEnd').value || undefined,
+      };
+      const r = await fetch(`${API}/tune`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.json());
+      const base = r.baseline_metrics || {};
+      const best = r.best_metrics || {};
+      const delta = (base.log_loss != null && best.log_loss != null)
+        ? (best.log_loss - base.log_loss).toFixed(4) : '?';
+      status.innerHTML =
+        `Done · games ${r.games_evaluated} · ` +
+        `baseline log loss <b>${base.log_loss}</b> (acc ${(base.accuracy*100).toFixed(1)}%) → ` +
+        `best <b style="color:#4fc3f7">${best.log_loss}</b> (acc ${(best.accuracy*100).toFixed(1)}%) · ` +
+        `Δ ${delta} ${apply ? '· <b>applied</b>' : '· not applied'}`;
+      const display = {
+        baseline_metrics: base,
+        best_metrics: best,
+        best_weights: r.best_weights,
+        applied: r.applied || false,
+      };
+      out.textContent = JSON.stringify(display, null, 2);
+      out.style.display = 'block';
+      if (apply) await loadWeights();
+    } catch (e) {
+      status.textContent = 'Tune failed: ' + e.message;
+    }
+  }
 </script>
 
 </body>

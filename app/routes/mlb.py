@@ -4,6 +4,8 @@ from app.services.mlb import get_roster, get_schedule, get_upcoming, get_lineup,
 from app.services.trades import get_trades, add_trade, reset_trades
 from app.services.predict import predict_game
 from app.services.predict import load_weights, save_weights, DEFAULT_HIT_WEIGHTS, DEFAULT_PITCH_WEIGHTS, DEFAULT_BALANCE
+from app.services import tracking
+from app.services import backtest as bt
 
 router = APIRouter()
 
@@ -160,9 +162,80 @@ async def predict(request: Request):
         away_team_id = away_result.get("team_id", 0)
         result = predict_game(home_roster, away_roster, home_pitcher_id, away_pitcher_id, home_team_id, away_team_id)
         result["lineup_source"] = lineup_source
+
+        # Log prediction for tracking (skips when no game_id, since we can't grade those later)
+        log_id = None
+        if game_id and not payload.get("skip_log"):
+            try:
+                log_id = tracking.log_prediction(
+                    home_team=home_team,
+                    away_team=away_team,
+                    prediction=result,
+                    game_id=game_id,
+                    game_date=game_date,
+                    home_pitcher_id=home_pitcher_id,
+                    away_pitcher_id=away_pitcher_id,
+                    weights=load_weights(),
+                )
+            except Exception as e:
+                print(f"Failed to log prediction: {e}")
+        result["prediction_id"] = log_id
         return result
 
     except Exception as e:
         import traceback
         print("PREDICT ERROR:", traceback.format_exc())
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ---------- prediction tracking ----------
+
+@router.get("/predictions")
+def predictions_list(status: str = None, limit: int = 200):
+    return {"predictions": tracking.list_predictions(status=status, limit=limit)}
+
+
+@router.get("/predictions/summary")
+def predictions_summary():
+    return tracking.summary()
+
+
+@router.post("/predictions/grade")
+def predictions_grade():
+    return tracking.grade_pending()
+
+
+@router.delete("/predictions/{pred_id}")
+def predictions_delete(pred_id: int):
+    return tracking.delete_prediction(pred_id)
+
+
+@router.delete("/predictions")
+def predictions_reset():
+    return tracking.reset_all()
+
+
+# ---------- backtest + tune ----------
+
+@router.post("/backtest")
+async def backtest(request: Request):
+    payload = await request.json() if (await request.body()) else {}
+    start = payload.get("start_date")
+    end = payload.get("end_date")
+    return bt.run_backtest(start_date=start, end_date=end)
+
+
+@router.post("/tune")
+async def tune(request: Request):
+    payload = await request.json() if (await request.body()) else {}
+    start = payload.get("start_date")
+    end = payload.get("end_date")
+    n_iter = int(payload.get("n_iter", 200))
+    apply = bool(payload.get("apply", False))
+    seed = int(payload.get("seed", 42))
+    return bt.run_tune(start_date=start, end_date=end, n_iter=n_iter, apply=apply, seed=seed)
+
+
+@router.post("/tune/clear-cache")
+def tune_clear_cache():
+    return bt.clear_cache()
