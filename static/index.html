@@ -282,13 +282,18 @@
   <!-- PREDICTIONS PAGE -->
   <div class="page" id="page-predictions">
     <div class="section">
-      <h2>Today's Games</h2>
-      <div style="display:flex; gap:12px; align-items:center; margin-bottom:14px;">
-        <span id="todayDate" style="font-size:0.85rem; color:#888;"></span>
-        <button class="trade-btn" onclick="loadTodayGames(true)">↻ Refresh predictions</button>
+      <h2 id="dailyHeader">Daily View</h2>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:14px;">
+        <button class="trade-btn" onclick="navDay(-1)" title="Previous day">◀</button>
+        <input id="dailyDate" type="date" style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px;">
+        <button class="trade-btn" onclick="navDay(1)" title="Next day">▶</button>
+        <button class="trade-btn" onclick="goToday()">Today</button>
+        <span id="dailyMeta" style="font-size:0.8rem; color:#888; margin-left:8px;"></span>
+        <span style="flex:1"></span>
+        <button id="dailyPredictBtn" class="trade-btn" onclick="loadTodayGames(true)" style="display:none;">↻ Run / refresh predictions</button>
       </div>
       <div id="todayStatus" style="font-size:0.85rem; color:#4fc3f7; margin-bottom:12px;"></div>
-      <div id="todayGames"><div class="loading">Loading today's games...</div></div>
+      <div id="todayGames"><div class="loading">Loading…</div></div>
     </div>
 
     <div class="section">
@@ -984,13 +989,106 @@
 
   // ----- PREDICTIONS PAGE -----
   let todayGamesCache = null;
+  let currentDailyDate = null;
+
+  function todayISO() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function navDay(deltaDays) {
+    const d = new Date(currentDailyDate || todayISO());
+    d.setDate(d.getDate() + deltaDays);
+    setDailyDate(d.toISOString().slice(0, 10));
+  }
+  function goToday() { setDailyDate(todayISO()); }
+
+  function setDailyDate(iso) {
+    currentDailyDate = iso;
+    document.getElementById('dailyDate').value = iso;
+    document.getElementById('dailyHeader').textContent =
+      iso === todayISO() ? `Today's Games (${iso})` : `Games on ${iso}`;
+    loadDay(iso);
+  }
+
+  async function loadDay(iso) {
+    const container = document.getElementById('todayGames');
+    const status = document.getElementById('todayStatus');
+    const meta = document.getElementById('dailyMeta');
+    const predictBtn = document.getElementById('dailyPredictBtn');
+    const isToday = iso === todayISO();
+
+    container.innerHTML = '<div class="loading">Loading…</div>';
+    status.textContent = '';
+
+    if (isToday) {
+      predictBtn.style.display = '';
+      predictBtn.textContent = todayGamesCache ? '↻ Refresh predictions' : '▶ Run predictions';
+      // Auto-load if we have a cached result; otherwise let the user click
+      if (todayGamesCache) {
+        renderTodayGames(todayGamesCache);
+        return;
+      }
+      // First time today: kick off auto-predict
+      await loadTodayGames(false);
+      return;
+    }
+
+    // Past or future day: read from DB only
+    predictBtn.style.display = 'none';
+    try {
+      const r = await fetch(`${API}/predictions?game_date=${iso}&limit=50`).then(r => r.json());
+      const preds = r.predictions || [];
+      meta.textContent = preds.length
+        ? `${preds.length} prediction${preds.length === 1 ? '' : 's'} on file`
+        : 'no predictions logged for this date';
+      if (!preds.length) {
+        container.innerHTML = '<div class="loading">No predictions were logged on this date. (Predictions only persist after you visit the page on the day they\'re played.)</div>';
+        return;
+      }
+      renderHistoricalDay(preds);
+    } catch (e) {
+      container.innerHTML = '<div class="loading">Failed to load: ' + e.message + '</div>';
+    }
+  }
+
+  function renderHistoricalDay(preds) {
+    const container = document.getElementById('todayGames');
+    const cards = preds.map(p => {
+      const home = (p.home_win_pct ?? 50);
+      const away = (p.away_win_pct ?? 50);
+      const pickPct = Math.max(home, away).toFixed(1);
+      const pick = p.predicted_winner;
+      let resultBadge = '<span class="badge badge-traded">pending</span>';
+      let scoreLine = '';
+      if (p.status === 'graded') {
+        resultBadge = p.correct
+          ? '<span class="badge badge-active">✓ correct</span>'
+          : '<span class="badge badge-il">✗ wrong</span>';
+        if (p.home_score != null && p.away_score != null) {
+          scoreLine = `Final: ${p.away_team} ${p.away_score} – ${p.home_score} ${p.home_team} (${p.actual_winner} won)`;
+        }
+      }
+      return `<div class="today-card">
+        <div class="matchup">${p.away_team} @ ${p.home_team}</div>
+        <div class="bars">
+          <div class="bar-away" style="width:${away}%"></div>
+          <div class="bar-home" style="width:${home}%"></div>
+        </div>
+        <div class="pcts">
+          <span>${p.away_team} ${away.toFixed(1)}%</span>
+          <span>${home.toFixed(1)}% ${p.home_team}</span>
+        </div>
+        <div class="pick">Pick: <b>${pick}</b> (${pickPct}%) ${resultBadge}</div>
+        <div class="meta">${scoreLine}</div>
+      </div>`;
+    }).join('');
+    container.innerHTML = `<div class="today-grid">${cards}</div>`;
+  }
 
   async function loadTodayGames(force = false) {
     const container = document.getElementById('todayGames');
     const status = document.getElementById('todayStatus');
-    const dateLabel = document.getElementById('todayDate');
-    const today = new Date().toISOString().slice(0, 10);
-    dateLabel.textContent = today;
+    const meta = document.getElementById('dailyMeta');
 
     if (todayGamesCache && !force) {
       renderTodayGames(todayGamesCache);
@@ -998,12 +1096,13 @@
     }
     status.textContent = 'Predicting all of today\'s games (this can take 1–2 minutes on first load)…';
     container.innerHTML = '<div class="loading">Running predictions for every matchup…</div>';
+    meta.textContent = '';
     try {
       const r = await fetch(`${API}/predict/today`).then(r => r.json());
       todayGamesCache = r;
       status.textContent = '';
+      meta.textContent = `${(r.games || []).length} games`;
       renderTodayGames(r);
-      // Refresh history table since today's games were just logged
       loadPredictionHistory();
     } catch (e) {
       status.textContent = 'Failed: ' + e.message;
@@ -1049,9 +1148,20 @@
   }
 
   async function loadPredictions() {
-    loadTodayGames(false);
+    // Default to today on first open; preserve whatever date the user picked otherwise
+    if (!currentDailyDate) {
+      currentDailyDate = todayISO();
+      document.getElementById('dailyDate').value = currentDailyDate;
+    }
+    setDailyDate(currentDailyDate);
     loadPredictionHistory();
   }
+
+  // Wire up the date input (script runs after DOM is parsed)
+  (() => {
+    const di = document.getElementById('dailyDate');
+    if (di) di.addEventListener('change', e => setDailyDate(e.target.value));
+  })();
 
   async function loadPredictionHistory() {
     const tbody = document.getElementById('predTable');

@@ -240,13 +240,18 @@ async def predict_today():
 # ---------- prediction tracking ----------
 
 @router.get("/predictions")
-def predictions_list(status: str = None, limit: int = 200):
-    return {"predictions": tracking.list_predictions(status=status, limit=limit)}
+def predictions_list(status: str = None, limit: int = 200, game_date: str = None):
+    return {"predictions": tracking.list_predictions(status=status, limit=limit, game_date=game_date)}
 
 
 @router.get("/predictions/summary")
 def predictions_summary():
     return tracking.summary()
+
+
+@router.get("/predictions/dates")
+def predictions_dates():
+    return {"dates": tracking.available_dates()}
 
 
 @router.post("/predictions/grade")

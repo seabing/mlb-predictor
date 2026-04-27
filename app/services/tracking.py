@@ -208,19 +208,35 @@ def grade_pending(limit=200):
     return {"graded": graded, "skipped": skipped, "checked": len(rows)}
 
 
-def list_predictions(status=None, limit=200):
+def list_predictions(status=None, limit=200, game_date=None):
+    init_db()
+    sql = "SELECT * FROM predictions WHERE 1=1"
+    params = []
+    if status:
+        sql += " AND status = ?"
+        params.append(status)
+    if game_date:
+        sql += " AND game_date = ?"
+        params.append(game_date)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+    with _conn() as c:
+        rows = c.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def available_dates(limit=90):
+    """Return distinct game_dates present in the table, newest first."""
     init_db()
     with _conn() as c:
-        if status:
-            rows = c.execute(
-                "SELECT * FROM predictions WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-                (status, limit)
-            ).fetchall()
-        else:
-            rows = c.execute(
-                "SELECT * FROM predictions ORDER BY created_at DESC LIMIT ?",
-                (limit,)
-            ).fetchall()
+        rows = c.execute(
+            "SELECT game_date, COUNT(*) AS n, "
+            "SUM(CASE WHEN status='graded' THEN 1 ELSE 0 END) AS graded, "
+            "SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END) AS correct "
+            "FROM predictions WHERE game_date IS NOT NULL "
+            "GROUP BY game_date ORDER BY game_date DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
