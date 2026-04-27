@@ -264,6 +264,12 @@ def predictions_reset():
     return tracking.reset_all()
 
 
+@router.post("/predictions/dedupe")
+def predictions_dedupe():
+    """Clean up duplicate rows from before the dedup fix."""
+    return tracking.dedupe_existing()
+
+
 # ---------- backtest + tune ----------
 
 @router.post("/backtest")

@@ -59,7 +59,14 @@ def init_db():
 
 def log_prediction(home_team, away_team, prediction, game_id=None, game_date=None,
                    home_pitcher_id=0, away_pitcher_id=0, weights=None):
-    """Insert a prediction. Replaces any existing prediction for the same game_id."""
+    """Upsert a prediction with strict 1-row-per-game_id semantics.
+
+    - If a graded prediction already exists for this game_id → keep it untouched
+      (we don't overwrite history once the game has been settled).
+    - If a pending prediction exists → replace it with the new one (lineup or
+      model may have changed since the previous attempt).
+    - Otherwise → insert.
+    """
     init_db()
     home_pct = prediction.get("home_win_pct", 50)
     away_pct = prediction.get("away_win_pct", 50)
@@ -70,9 +77,21 @@ def log_prediction(home_team, away_team, prediction, game_id=None, game_date=Non
     }
     now = datetime.utcnow().isoformat()
     with _conn() as c:
-        # Replace any prior prediction for the same game_id (keep one row per game)
         if game_id:
-            c.execute("DELETE FROM predictions WHERE game_id = ? AND status = 'pending'", (game_id,))
+            existing = c.execute(
+                "SELECT id, status FROM predictions WHERE game_id = ?",
+                (game_id,)
+            ).fetchall()
+            # If any row for this game is already graded, preserve history; bail.
+            if any(r["status"] == "graded" for r in existing):
+                graded_id = next(r["id"] for r in existing if r["status"] == "graded")
+                # Clean up any extra rows so we end up with exactly one row.
+                for r in existing:
+                    if r["id"] != graded_id:
+                        c.execute("DELETE FROM predictions WHERE id = ?", (r["id"],))
+                return graded_id
+            # No graded row yet — wipe any pending rows and insert fresh.
+            c.execute("DELETE FROM predictions WHERE game_id = ?", (game_id,))
         c.execute("""
             INSERT INTO predictions
             (game_id, game_date, home_team, away_team, home_pitcher_id, away_pitcher_id,
@@ -85,6 +104,37 @@ def log_prediction(home_team, away_team, prediction, game_id=None, game_date=Non
             json.dumps(features), json.dumps(weights or {}), now
         ))
         return c.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def dedupe_existing():
+    """Remove duplicate rows that snuck in under the old logic.
+
+    Rule: keep one row per game_id. Prefer the graded row (if any), otherwise
+    the most recent pending row. Returns count of rows deleted.
+    """
+    init_db()
+    deleted = 0
+    with _conn() as c:
+        # Find game_ids with more than one row
+        dupe_ids = [
+            r["game_id"] for r in c.execute("""
+                SELECT game_id FROM predictions
+                WHERE game_id IS NOT NULL
+                GROUP BY game_id
+                HAVING COUNT(*) > 1
+            """).fetchall()
+        ]
+        for gid in dupe_ids:
+            rows = c.execute(
+                "SELECT id, status, created_at FROM predictions WHERE game_id = ? "
+                "ORDER BY (status = 'graded') DESC, created_at DESC",
+                (gid,)
+            ).fetchall()
+            keeper = rows[0]["id"]
+            for r in rows[1:]:
+                c.execute("DELETE FROM predictions WHERE id = ?", (r["id"],))
+                deleted += 1
+    return {"deleted": deleted, "duplicate_games_found": len(dupe_ids)}
 
 
 def _fetch_final(game_id):
@@ -177,6 +227,9 @@ def list_predictions(status=None, limit=200):
 def summary():
     """Running accuracy + log-loss on graded predictions."""
     init_db()
+    # Self-heal: drop any duplicate rows that may have been logged under the
+    # old (buggy) dedup logic before reading totals.
+    dedupe_existing()
     with _conn() as c:
         rows = c.execute("""
             SELECT home_win_pct, away_win_pct, predicted_winner, actual_winner,
