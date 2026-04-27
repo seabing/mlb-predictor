@@ -303,3 +303,16 @@ async def tune(request: Request):
 @router.post("/tune/clear-cache")
 def tune_clear_cache():
     return bt.clear_cache()
+
+
+@router.post("/tune-from-history")
+async def tune_from_history(request: Request):
+    """Tune weights using the user's own graded predictions as the test set."""
+    payload = await request.json() if (await request.body()) else {}
+    n_iter = int(payload.get("n_iter", 200))
+    apply = bool(payload.get("apply", False))
+    seed = int(payload.get("seed", 42))
+    min_games = int(payload.get("min_games", 20))
+    return await asyncio.to_thread(
+        bt.run_tune_from_history, n_iter, apply, seed, min_games
+    )

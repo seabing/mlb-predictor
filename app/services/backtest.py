@@ -388,6 +388,68 @@ def run_backtest(start_date=None, end_date=None, weights=None):
     }
 
 
+def run_tune_from_history(n_iter=200, apply=False, seed=42, min_games=20):
+    """Tune weights against the user's own graded predictions.
+
+    This is the most honest tuning signal you can get: every game in the
+    training set is one where the user has actually predicted using the
+    model and seen the real outcome. Returns the same shape as run_tune.
+    """
+    from app.services.tracking import list_predictions
+    from app.services.mlb import TEAM_IDS
+
+    graded = [p for p in list_predictions(status="graded", limit=10000)
+              if p.get("game_id") and p.get("home_score") is not None
+              and p.get("away_score") is not None]
+    if len(graded) < min_games:
+        return {
+            "error": f"Need at least {min_games} graded predictions to tune; "
+                     f"you have {len(graded)}. Predict more games and let them grade.",
+            "graded_count": len(graded),
+        }
+
+    print(f"[tune-from-history] {len(graded)} graded predictions in DB")
+    # Build game records compatible with precompute_features
+    games = []
+    skipped = 0
+    for p in graded:
+        home_id = TEAM_IDS.get((p.get("home_team") or "").upper())
+        away_id = TEAM_IDS.get((p.get("away_team") or "").upper())
+        if not home_id or not away_id:
+            skipped += 1
+            continue
+        games.append({
+            "game_id": p["game_id"],
+            "date": p.get("game_date"),
+            "home_team_id": home_id,
+            "away_team_id": away_id,
+            "home_score": p["home_score"],
+            "away_score": p["away_score"],
+        })
+
+    print(f"[tune-from-history] {len(games)} games mapped to team IDs ({skipped} skipped)")
+    games = fetch_lineups_for(games)
+    print(f"[tune-from-history] {len(games)} games with lineups available")
+    features = precompute_features(games)
+    print(f"[tune-from-history] {len(features)} games scorable")
+
+    if len(features) < min_games:
+        return {
+            "error": f"Could only build features for {len(features)} games "
+                     f"(need {min_games}). Try predicting more recent games.",
+            "scorable_games": len(features),
+        }
+
+    result = random_search(features, n_iter=n_iter, seed=seed)
+    result["games_evaluated"] = len(features)
+    result["source"] = "graded_history"
+    _append_history(result)
+    if apply:
+        save_weights(result["best_weights"])
+        result["applied"] = True
+    return result
+
+
 def run_tune(start_date=None, end_date=None, n_iter=200, apply=False, seed=42):
     """Run a backtest + random search; optionally save the best weights."""
     if not start_date or not end_date:
@@ -437,12 +499,13 @@ def _append_history(result):
             history = []
     history.append({
         "ts": time.time(),
-        "start_date": result["start_date"],
-        "end_date": result["end_date"],
-        "iterations": result["iterations"],
+        "source": result.get("source", "date_range"),
+        "start_date": result.get("start_date"),
+        "end_date": result.get("end_date"),
+        "iterations": result.get("iterations"),
         "games": result.get("games_evaluated"),
-        "baseline_metrics": result["baseline_metrics"],
-        "best_metrics": result["best_metrics"],
+        "baseline_metrics": result.get("baseline_metrics"),
+        "best_metrics": result.get("best_metrics"),
     })
     with open(HISTORY_FILE, "w") as f:
         json.dump(history[-50:], f, indent=2)
