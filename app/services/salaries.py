@@ -118,11 +118,48 @@ def _parse_int(s):
 
 # ---------- scraper ----------
 
-def fetch_team_salaries(team_code, force=False):
-    """Returns {normalized_name: {name, salary, years_left, total_value, contract_end_year}}.
+URL_PATTERNS = [
+    "https://www.spotrac.com/mlb/{slug}/contracts",
+    "https://www.spotrac.com/mlb/{slug}/payroll",
+    "https://www.spotrac.com/mlb/{slug}/cap",
+    "https://www.spotrac.com/mlb/{slug}/cap/2026",
+]
 
-    On failure, returns whatever's in the cache (possibly stale, possibly empty).
-    Always non-blocking from the user's POV — 10s timeout.
+
+def _try_fetch(slug):
+    """Try a few URL shapes; return (url, html, status, http_code) of first that has tables."""
+    last_err = None
+    for tmpl in URL_PATTERNS:
+        url = tmpl.format(slug=slug)
+        try:
+            r = requests.get(
+                url,
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+                timeout=10,
+                allow_redirects=True,
+            )
+            html = r.text or ""
+            n_tables = html.count("<table")
+            n_tr = html.count("<tr")
+            print(f"[salaries] GET {url} → HTTP {r.status_code}, "
+                  f"{len(html)} bytes, {n_tables} tables, {n_tr} <tr> tags")
+            if r.status_code == 200 and n_tables >= 1:
+                return url, html, "ok", r.status_code
+            last_err = f"HTTP {r.status_code}, tables={n_tables}"
+        except Exception as e:
+            last_err = str(e)
+            print(f"[salaries] GET {url} threw: {e}")
+    return None, None, last_err or "no usable response", None
+
+
+def fetch_team_salaries(team_code, force=False):
+    """Returns {normalized_name: {...}}.
+
+    Falls back to cache on failure. Logs verbosely so we can debug from Railway.
     """
     team_code = (team_code or "").upper()
     cache = _load_cache()
@@ -132,34 +169,30 @@ def fetch_team_salaries(team_code, force=False):
 
     slug = SPOTRAC_SLUGS.get(team_code)
     if not slug:
+        print(f"[salaries] no Spotrac slug for {team_code}")
         return entry.get("players", {}) if entry else {}
 
-    url = f"https://www.spotrac.com/mlb/{slug}/contracts"
-    try:
-        resp = requests.get(
-            url,
-            headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"},
-            timeout=10,
-        )
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"[salaries] fetch failed for {team_code}: {e}")
+    url, html, status, http_code = _try_fetch(slug)
+    if not html:
+        print(f"[salaries] all URL patterns failed for {team_code}: {status}")
         return entry.get("players", {}) if entry else {}
 
     try:
-        players = parse_spotrac_html(resp.text)
+        players = parse_spotrac_html(html)
     except Exception as e:
         print(f"[salaries] parse failed for {team_code}: {e}")
         return entry.get("players", {}) if entry else {}
 
+    print(f"[salaries] {team_code}: parsed {len(players)} player rows from {url}")
     cache[team_code] = {
         "fetched_at": datetime.utcnow().isoformat(),
         "url": url,
+        "http_status": http_code,
+        "html_bytes": len(html),
         "player_count": len(players),
         "players": players,
     }
     _save_cache(cache)
-    print(f"[salaries] cached {len(players)} players for {team_code}")
     return players
 
 
@@ -291,3 +324,57 @@ def clear_cache():
     if os.path.exists(CACHE_FILE):
         os.remove(CACHE_FILE)
     return {"status": "cleared"}
+
+
+def debug_team(team_code):
+    """Return diagnostic detail about a Spotrac fetch + parse for one team."""
+    from bs4 import BeautifulSoup
+    team_code = (team_code or "").upper()
+    slug = SPOTRAC_SLUGS.get(team_code)
+    if not slug:
+        return {"error": f"no slug for {team_code}"}
+    url, html, status, http_code = _try_fetch(slug)
+    if not html:
+        return {"team": team_code, "error": status, "tried": URL_PATTERNS}
+
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.find_all("table")
+    table_summaries = []
+    for i, t in enumerate(tables[:10]):
+        thead = t.find("thead")
+        if thead:
+            headers = [th.get_text(" ", strip=True) for th in thead.find_all(["th", "td"])]
+        else:
+            first = t.find("tr")
+            headers = [c.get_text(" ", strip=True) for c in first.find_all(["th", "td"])] if first else []
+        rows = t.find_all("tr")
+        sample_row_text = ""
+        for r in rows[1:4]:
+            cells = [c.get_text(" ", strip=True) for c in r.find_all(["td", "th"])]
+            if any(cells):
+                sample_row_text = " | ".join(cells)[:300]
+                break
+        table_summaries.append({
+            "index": i,
+            "headers": headers,
+            "row_count": len(rows),
+            "sample_row": sample_row_text,
+        })
+
+    players = parse_spotrac_html(html)
+    sample_players = list(players.values())[:5]
+
+    # First 1000 chars of HTML body — useful for spotting "JS-only" placeholder pages
+    body_text_excerpt = soup.get_text(" ", strip=True)[:600]
+
+    return {
+        "team": team_code,
+        "url_used": url,
+        "http_status": http_code,
+        "html_bytes": len(html),
+        "tables_found": len(tables),
+        "table_summaries": table_summaries,
+        "parsed_player_count": len(players),
+        "sample_parsed_players": sample_players,
+        "body_text_excerpt": body_text_excerpt,
+    }

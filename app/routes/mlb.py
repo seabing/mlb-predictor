@@ -36,6 +36,12 @@ def salaries_refresh(team_code: str):
     players = fetch_team_salaries(team_code, force=True)
     return {"team": team_code.upper(), "player_count": len(players)}
 
+
+@router.get("/salaries/debug/{team_code}")
+def salaries_debug(team_code: str):
+    from app.services.salaries import debug_team
+    return debug_team(team_code)
+
 @router.get("/schedule/{team_code}")
 def schedule(team_code: str, date: str = None):
     return get_schedule(team_code, date)
