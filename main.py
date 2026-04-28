@@ -1,13 +1,18 @@
+import asyncio
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.routes.mlb import router as mlb_router
+from app.services.scheduler import auto_predict_loop
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 APP_PASSWORD = os.getenv("APP_PASSWORD", "changeme")
+AUTO_PREDICT_ENABLED = os.getenv("AUTO_PREDICT_ENABLED", "1") not in ("0", "false", "False", "")
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -20,7 +25,27 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = None
+    if AUTO_PREDICT_ENABLED:
+        task = asyncio.create_task(auto_predict_loop())
+        print("[startup] auto-predict scheduler started")
+    else:
+        print("[startup] auto-predict scheduler disabled via env")
+    try:
+        yield
+    finally:
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            print("[shutdown] auto-predict scheduler stopped")
+
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(AuthMiddleware)
 
 @app.post("/auth")

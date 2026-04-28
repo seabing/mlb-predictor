@@ -293,6 +293,7 @@
         <button id="dailyPredictBtn" class="trade-btn" onclick="loadTodayGames(true)" style="display:none;">↻ Run / refresh predictions</button>
       </div>
       <div id="todayStatus" style="font-size:0.85rem; color:#4fc3f7; margin-bottom:12px;"></div>
+      <div id="autoPredictStatus" style="font-size:0.78rem; color:#666; margin-bottom:12px;"></div>
       <div id="todayGames"><div class="loading">Loading…</div></div>
     </div>
 
@@ -1155,6 +1156,40 @@
     }
     setDailyDate(currentDailyDate);
     loadPredictionHistory();
+    loadAutoPredictStatus();
+  }
+
+  async function loadAutoPredictStatus() {
+    const el = document.getElementById('autoPredictStatus');
+    if (!el) return;
+    try {
+      const s = await fetch(`${API}/auto-predict/status`).then(r => r.json());
+      const lastRun = s.last_run_at ? new Date(s.last_run_at + 'Z').toLocaleString() : 'never';
+      const nextRun = s.next_run_at ? new Date(s.next_run_at + 'Z').toLocaleString() : '—';
+      const win = s.window_minutes;
+      const intervalMin = Math.round((s.interval_seconds || 0) / 60);
+      const dot = s.running ? '🟢' : '⚪';
+      el.innerHTML = `${dot} Auto-predict: every ${intervalMin}m, window ${win}m before first pitch · ` +
+        `last run ${lastRun} (predicted ${s.last_run_predicted}, skipped ${s.last_run_skipped}) · ` +
+        `next ${nextRun} · ` +
+        `<a href="#" onclick="runAutoPredictNow(); return false;" style="color:#4fc3f7;">run now</a>`;
+    } catch (e) {
+      el.textContent = 'Auto-predict status: unavailable';
+    }
+  }
+
+  async function runAutoPredictNow() {
+    const el = document.getElementById('autoPredictStatus');
+    el.textContent = '⏳ running auto-predict pass…';
+    try {
+      const r = await fetch(`${API}/auto-predict/run-now`, { method: 'POST' }).then(r => r.json());
+      el.textContent = `✓ predicted ${r.predicted}, skipped ${r.skipped}. Refreshing…`;
+      todayGamesCache = null;
+      setDailyDate(currentDailyDate);
+      loadAutoPredictStatus();
+    } catch (e) {
+      el.textContent = 'Run failed: ' + e.message;
+    }
   }
 
   // Wire up the date input (script runs after DOM is parsed)

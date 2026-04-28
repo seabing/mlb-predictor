@@ -310,6 +310,19 @@ def tune_clear_cache():
     return bt.clear_cache()
 
 
+@router.get("/auto-predict/status")
+def auto_predict_status():
+    from app.services.scheduler import state
+    return state
+
+
+@router.post("/auto-predict/run-now")
+async def auto_predict_run_now():
+    from app.services.scheduler import run_auto_predict_sync
+    predicted, skipped = await asyncio.to_thread(run_auto_predict_sync)
+    return {"predicted": predicted, "skipped": skipped}
+
+
 @router.post("/tune-from-history")
 async def tune_from_history(request: Request):
     """Tune weights using the user's own graded predictions as the test set."""
