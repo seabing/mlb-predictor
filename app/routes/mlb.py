@@ -42,6 +42,12 @@ def salaries_debug(team_code: str):
     from app.services.salaries import debug_team
     return debug_team(team_code)
 
+
+@router.post("/salaries/clear-cache")
+def salaries_clear():
+    from app.services.salaries import clear_cache
+    return clear_cache()
+
 @router.get("/schedule/{team_code}")
 def schedule(team_code: str, date: str = None):
     return get_schedule(team_code, date)

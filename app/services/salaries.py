@@ -196,17 +196,37 @@ def fetch_team_salaries(team_code, force=False):
     return players
 
 
+def _clean_player_name(cell):
+    """Spotrac stuffs a sort-key (last name) plus the anchor text into the player
+    cell, so plain text reads like 'Judge Aaron Judge'. Prefer the anchor's
+    text. Fall back to a 'first word equals last word' heuristic."""
+    a = cell.find("a")
+    if a:
+        text = a.get_text(" ", strip=True)
+        if text:
+            return text
+    text = cell.get_text(" ", strip=True)
+    parts = text.split()
+    # Strip leading jersey number / hash
+    while parts and (parts[0].isdigit() or parts[0] in ("#",)):
+        parts.pop(0)
+    # Drop a leading sort token that duplicates the trailing word
+    if len(parts) >= 3 and parts[0].lower() == parts[-1].lower():
+        parts = parts[1:]
+    return " ".join(parts)
+
+
 def parse_spotrac_html(html):
     """Best-effort parse of any Spotrac contract table on the page.
 
-    Handles variation in column ordering by matching headers against keywords.
+    Spotrac contract pages typically have one big table with columns:
+    Player | Pos | Start Year | Type | Age At Signing | Start | End | Yrs | Value | AAV
     """
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
     out = {}
 
     for table in soup.find_all("table"):
-        # Build header → index map
         headers = []
         thead = table.find("thead")
         if thead:
@@ -220,59 +240,63 @@ def parse_spotrac_html(html):
         if not headers:
             continue
 
-        def find_idx(*needles):
+        def find_idx(*needles, exclude=()):
             for i, h in enumerate(headers):
+                if any(x in h for x in exclude):
+                    continue
                 for n in needles:
                     if n in h:
                         return i
             return -1
 
         name_idx = find_idx("player", "name")
-        salary_idx = find_idx("base salary", "salary", "base", "current salary",
-                              "2026 base", "2026")
-        years_idx = find_idx("yrs", "years")
-        fa_idx = find_idx("free agent", "fa year", "fa", "expir")
-        total_idx = find_idx("total value", "total cash", "value", "total")
+        # AAV (average annual value) is what people read as "salary"
+        salary_idx = find_idx("aav", "average annual", "current salary",
+                              "base salary", "2026 base", "2026 salary")
+        # Total contract value
+        total_idx = find_idx("value", "total cash", "total contract",
+                             exclude=("aav", "average annual"))
+        # End year of contract (a.k.a. free-agent year)
+        end_idx = find_idx("end", "fa year", "free agent", "expir",
+                           exclude=("start", "trend", "extend"))
+        start_idx = find_idx("start", exclude=("type", "player"))
 
         rows = table.find_all("tr")
         for row in rows:
-            cells = row.find_all(["td"])
+            cells = row.find_all("td")
             if len(cells) < 3:
                 continue
             try:
                 name_cell = cells[name_idx] if 0 <= name_idx < len(cells) else cells[0]
-                name = name_cell.get_text(" ", strip=True)
-                # Strip leading jersey number etc.
-                name = re.sub(r"^[\d\s\.\-]+", "", name).strip()
-                if len(name) < 3 or any(ch.isdigit() for ch in name[:2]):
+                name = _clean_player_name(name_cell)
+                if len(name) < 3:
                     continue
 
                 salary = None
                 if 0 <= salary_idx < len(cells):
                     salary = _parse_money(cells[salary_idx].get_text(" ", strip=True))
-                years_left = None
-                if 0 <= years_idx < len(cells):
-                    years_left = _parse_int(cells[years_idx].get_text(" ", strip=True))
-                fa_year = None
-                if 0 <= fa_idx < len(cells):
-                    fa_year = _parse_int(cells[fa_idx].get_text(" ", strip=True))
                 total_value = None
-                if 0 <= total_idx < len(cells):
+                if 0 <= total_idx < len(cells) and total_idx != salary_idx:
                     total_value = _parse_money(cells[total_idx].get_text(" ", strip=True))
+                end_year = None
+                if 0 <= end_idx < len(cells):
+                    end_year = _parse_int(cells[end_idx].get_text(" ", strip=True))
 
-                # Derive years_left from FA year if missing
-                if years_left is None and fa_year and fa_year >= CURRENT_SEASON:
-                    years_left = fa_year - CURRENT_SEASON
+                # Years remaining = end_year - current season (clamped at 0)
+                years_left = None
+                if end_year is not None:
+                    diff = end_year - CURRENT_SEASON
+                    years_left = max(0, diff)
 
-                # Skip rows that are clearly noise (no salary AND no years)
-                if salary is None and years_left is None and total_value is None:
+                # Skip noise rows
+                if salary is None and total_value is None and end_year is None:
                     continue
 
                 key = _normalize_name(name)
                 if not key:
                     continue
-                # Don't overwrite a row that already has salary with one that doesn't
                 existing = out.get(key)
+                # Prefer the row that actually has a salary
                 if existing and existing.get("salary") and salary is None:
                     continue
 
@@ -281,7 +305,7 @@ def parse_spotrac_html(html):
                     "salary": salary,
                     "years_left": years_left,
                     "total_value": total_value,
-                    "contract_end_year": fa_year,
+                    "contract_end_year": end_year,
                 }
             except Exception:
                 continue
