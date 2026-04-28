@@ -12,7 +12,29 @@ router = APIRouter()
 
 @router.get("/roster/{team_code}")
 def roster(team_code: str):
-    return get_roster(team_code)
+    result = get_roster(team_code)
+    if "error" in result:
+        return result
+    # Enrich with salary/contract data; degrade silently on failure
+    try:
+        from app.services.salaries import enrich_roster
+        enrich_roster(team_code, result.get("roster", []))
+    except Exception as e:
+        print(f"[roster] salary enrichment failed: {e}")
+    return result
+
+
+@router.get("/salaries/status")
+def salaries_status():
+    from app.services.salaries import cache_status
+    return cache_status()
+
+
+@router.post("/salaries/refresh/{team_code}")
+def salaries_refresh(team_code: str):
+    from app.services.salaries import fetch_team_salaries
+    players = fetch_team_salaries(team_code, force=True)
+    return {"team": team_code.upper(), "player_count": len(players)}
 
 @router.get("/schedule/{team_code}")
 def schedule(team_code: str, date: str = None):

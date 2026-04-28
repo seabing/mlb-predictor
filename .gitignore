@@ -8,4 +8,5 @@ __pycache__/
 data/predictions.db
 data/backtest_cache.json
 data/tuning_history.json
+data/salaries.json
 data/lineups/
