@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MLB Predictor — Sign in</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: #1a1d2e; border: 1px solid #2a2d3e; border-radius: 12px; padding: 32px; width: 100%; max-width: 380px; }
+    h1 { font-size: 1.3rem; color: #4fc3f7; margin-bottom: 8px; }
+    p { font-size: 0.9rem; color: #888; margin-bottom: 20px; }
+    label { font-size: 0.8rem; color: #aaa; display: block; margin-bottom: 6px; }
+    input { width: 100%; background: #2a2d3e; color: #e0e0e0; border: 1px solid #3a3d4e; padding: 10px 12px; border-radius: 6px; font-size: 0.95rem; margin-bottom: 14px; }
+    input:focus { outline: none; border-color: #4fc3f7; }
+    button { width: 100%; background: #4fc3f7; color: #0f1117; border: none; padding: 12px; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+    button:hover { background: #3eaae0; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .err { color: #ff6b6b; font-size: 0.85rem; margin-top: 10px; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>⚾ One last step</h1>
+  <p>Enter your email so I know who's stopping by.</p>
+  <form id="form">
+    <label for="email">Email</label>
+    <input id="email" type="email" placeholder="you@example.com" required autocomplete="email" autofocus>
+    <button id="btn" type="submit">Continue</button>
+    <div id="err" class="err"></div>
+  </form>
+</div>
+<script>
+  const form = document.getElementById('form');
+  const errEl = document.getElementById('err');
+  const btn = document.getElementById('btn');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errEl.textContent = '';
+    const email = document.getElementById('email').value.trim();
+    if (!email || !email.includes('@')) {
+      errEl.textContent = 'Enter a valid email.';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+      const resp = await fetch('/identify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Failed');
+      window.location.href = '/';
+    } catch (e) {
+      errEl.textContent = e.message;
+      btn.disabled = false;
+      btn.textContent = 'Continue';
+    }
+  });
+</script>
+</body>
+</html>

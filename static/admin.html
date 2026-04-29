@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MLB Predictor — Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; padding: 32px 16px; }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; color: #4fc3f7; margin-bottom: 24px; }
+    .card { background: #1a1d2e; border: 1px solid #2a2d3e; border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+    .stat-row { display: flex; gap: 32px; flex-wrap: wrap; margin-bottom: 8px; }
+    .stat-row > div { min-width: 100px; }
+    .stat-label { font-size: 0.7rem; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-val { font-size: 1.5rem; font-weight: 700; color: #4fc3f7; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th { text-align: left; padding: 10px 12px; color: #888; font-weight: 500; border-bottom: 1px solid #2a2d3e; font-size: 0.8rem; }
+    td { padding: 10px 12px; border-bottom: 1px solid #1e2130; vertical-align: top; }
+    tr:hover td { background: #1e2233; }
+    .ua { font-size: 0.72rem; color: #666; max-width: 300px; word-break: break-word; }
+    .login { max-width: 380px; margin: 80px auto; }
+    label { font-size: 0.8rem; color: #aaa; display: block; margin-bottom: 6px; }
+    input { width: 100%; background: #2a2d3e; color: #e0e0e0; border: 1px solid #3a3d4e; padding: 10px 12px; border-radius: 6px; font-size: 0.95rem; margin-bottom: 14px; }
+    button { width: 100%; background: #4fc3f7; color: #0f1117; border: none; padding: 12px; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+    .err { color: #ff6b6b; font-size: 0.85rem; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div id="loginCard" class="card login" style="display:none;">
+    <h1>Admin sign-in</h1>
+    <form id="loginForm">
+      <label>Admin password</label>
+      <input id="pw" type="password" autofocus required>
+      <button type="submit">Continue</button>
+      <div id="loginErr" class="err"></div>
+    </form>
+  </div>
+
+  <div id="dashboard" style="display:none;">
+    <h1>Visitor activity</h1>
+    <div class="card">
+      <div class="stat-row">
+        <div>
+          <div class="stat-label">Unique visitors</div>
+          <div class="stat-val" id="unique">—</div>
+        </div>
+        <div>
+          <div class="stat-label">Total hits</div>
+          <div class="stat-val" id="hits">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>First seen</th>
+            <th>Last seen</th>
+            <th style="text-align:right;">Visits</th>
+            <th>Last page</th>
+            <th>User agent</th>
+          </tr>
+        </thead>
+        <tbody id="visitors"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+  const fmt = iso => iso ? new Date(iso + 'Z').toLocaleString() : '';
+  async function loadDashboard() {
+    try {
+      const r = await fetch('/api/admin/visitors', { credentials: 'include' });
+      if (r.status === 401) { showLogin(); return; }
+      const data = await r.json();
+      document.getElementById('unique').textContent = data.unique_visitors;
+      document.getElementById('hits').textContent = data.total_hits;
+      const rows = (data.visitors || []).map(v => `
+        <tr>
+          <td>${v.email}</td>
+          <td>${fmt(v.first_seen)}</td>
+          <td>${fmt(v.last_seen)}</td>
+          <td style="text-align:right;">${v.visit_count}</td>
+          <td>${v.last_path || ''}</td>
+          <td class="ua">${v.last_user_agent || ''}</td>
+        </tr>`).join('');
+      document.getElementById('visitors').innerHTML = rows ||
+        '<tr><td colspan="6" style="color:#666; padding:24px; text-align:center;">No visitors yet</td></tr>';
+      document.getElementById('dashboard').style.display = '';
+      document.getElementById('loginCard').style.display = 'none';
+    } catch (e) {
+      showLogin();
+    }
+  }
+  function showLogin() {
+    document.getElementById('loginCard').style.display = '';
+    document.getElementById('dashboard').style.display = 'none';
+  }
+  document.getElementById('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const pw = document.getElementById('pw').value;
+    const errEl = document.getElementById('loginErr');
+    errEl.textContent = '';
+    try {
+      const r = await fetch('/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password: pw }),
+      });
+      if (!r.ok) {
+        const d = await r.json();
+        errEl.textContent = d.error || 'Wrong password';
+        return;
+      }
+      loadDashboard();
+    } catch (e) {
+      errEl.textContent = e.message;
+    }
+  });
+  loadDashboard();
+</script>
+</body>
+</html>

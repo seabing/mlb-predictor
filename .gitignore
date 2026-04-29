@@ -6,6 +6,7 @@ __pycache__/
 
 # runtime / generated data
 data/predictions.db
+data/visitors.db
 data/backtest_cache.json
 data/tuning_history.json
 data/salaries.json
