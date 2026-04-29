@@ -42,7 +42,15 @@ def run_auto_predict_sync():
     """Run one scheduler pass synchronously. Returns (predicted, skipped)."""
     # Lazy imports to avoid circular dependencies at module load
     from app.routes.mlb import _predict_for_game
-    from app.services.tracking import _conn, init_db
+    from app.services.tracking import _conn, init_db, grade_pending
+
+    # Always grade first — converts any games that finished since last pass
+    try:
+        graded_info = grade_pending()
+        if graded_info.get("graded"):
+            print(f"[auto-predict] graded {graded_info['graded']} pending predictions")
+    except Exception as e:
+        print(f"[auto-predict] grade_pending failed: {e}")
 
     now = _utcnow()
     today = now.date()

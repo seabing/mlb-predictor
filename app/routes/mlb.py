@@ -126,7 +126,7 @@ def form(team_code: str):
 
 def _predict_for_game(home_team, away_team, game_id=None, game_date=None,
                       manual_home_lineup=None, manual_away_lineup=None,
-                      log=True):
+                      log=True, force_replace=False):
     """Reusable prediction core. Returns the prediction dict (or {'error': ...})."""
     home_result = get_roster(home_team)
     away_result = get_roster(away_team)
@@ -190,6 +190,7 @@ def _predict_for_game(home_team, away_team, game_id=None, game_date=None,
                 game_id=game_id, game_date=game_date,
                 home_pitcher_id=home_pitcher_id, away_pitcher_id=away_pitcher_id,
                 weights=load_weights(),
+                force_replace=force_replace,
             )
         except Exception as e:
             print(f"Failed to log prediction: {e}")
@@ -210,6 +211,7 @@ async def predict(request: Request):
             payload.get("manual_home_lineup"),
             payload.get("manual_away_lineup"),
             not payload.get("skip_log", False),
+            bool(payload.get("force", False)),
         )
     except Exception as e:
         import traceback
@@ -252,11 +254,38 @@ async def predict_today():
     if not schedule:
         return {"date": today, "games": []}
 
-    # Bound concurrency so we don't hammer the MLB API
+    # Run any pending grading first so finished games show up correctly
+    try:
+        await asyncio.to_thread(tracking.grade_pending)
+    except Exception as e:
+        print(f"[predict_today] grade_pending failed: {e}")
+
+    in_progress_states = {"In Progress", "Manager challenge", "Delayed",
+                          "Delayed Start", "Warmup", "Pre-Game"}
+    final_states = {"Final", "Game Over", "Completed Early"}
+
     sem = asyncio.Semaphore(4)
 
     async def run_one(g):
         async with sem:
+            # If we already have a prediction for this game, return it as-is.
+            existing = tracking.get_by_game_id(g["game_id"])
+            if existing:
+                return {
+                    **g,
+                    "home_win_pct": existing["home_win_pct"],
+                    "away_win_pct": existing["away_win_pct"],
+                    "predicted_winner": existing["predicted_winner"],
+                    "lineup_source": existing["lineup_source"] or "logged",
+                    "prediction_id": existing["id"],
+                    "status_logged": existing["status"],
+                    "actual_winner": existing.get("actual_winner"),
+                    "home_score": existing.get("home_score"),
+                    "away_score": existing.get("away_score"),
+                }
+            # Otherwise: only predict if the game hasn't started yet
+            if g["status"] in in_progress_states or g["status"] in final_states:
+                return {**g, "skipped_reason": f"no prediction logged before {g['status']}"}
             try:
                 pred = await asyncio.to_thread(
                     _predict_for_game,

@@ -58,14 +58,17 @@ def init_db():
 
 
 def log_prediction(home_team, away_team, prediction, game_id=None, game_date=None,
-                   home_pitcher_id=0, away_pitcher_id=0, weights=None):
-    """Upsert a prediction with strict 1-row-per-game_id semantics.
+                   home_pitcher_id=0, away_pitcher_id=0, weights=None,
+                   force_replace=False):
+    """1-row-per-game_id, first prediction wins.
 
-    - If a graded prediction already exists for this game_id → keep it untouched
-      (we don't overwrite history once the game has been settled).
-    - If a pending prediction exists → replace it with the new one (lineup or
-      model may have changed since the previous attempt).
+    - If ANY row already exists for this game_id → keep it. The first
+      prediction we logged is the one we track against. Returns the existing
+      id (and cleans up any duplicate rows from older buggy logic).
     - Otherwise → insert.
+
+    Set force_replace=True to override (used only by manual /predict calls
+    where the user explicitly wants to overwrite).
     """
     init_db()
     home_pct = prediction.get("home_win_pct", 50)
@@ -79,19 +82,26 @@ def log_prediction(home_team, away_team, prediction, game_id=None, game_date=Non
     with _conn() as c:
         if game_id:
             existing = c.execute(
-                "SELECT id, status FROM predictions WHERE game_id = ?",
+                "SELECT id, status FROM predictions WHERE game_id = ? "
+                "ORDER BY (status='graded') DESC, id ASC",
                 (game_id,)
             ).fetchall()
-            # If any row for this game is already graded, preserve history; bail.
-            if any(r["status"] == "graded" for r in existing):
-                graded_id = next(r["id"] for r in existing if r["status"] == "graded")
-                # Clean up any extra rows so we end up with exactly one row.
-                for r in existing:
-                    if r["id"] != graded_id:
-                        c.execute("DELETE FROM predictions WHERE id = ?", (r["id"],))
-                return graded_id
-            # No graded row yet — wipe any pending rows and insert fresh.
-            c.execute("DELETE FROM predictions WHERE game_id = ?", (game_id,))
+            if existing and not force_replace:
+                # Keep the best existing row (graded preferred, then oldest).
+                keeper_id = existing[0]["id"]
+                for r in existing[1:]:
+                    c.execute("DELETE FROM predictions WHERE id = ?", (r["id"],))
+                return keeper_id
+            if existing and force_replace:
+                # Only allow replace when caller explicitly asks AND the row
+                # isn't graded — never overwrite a settled outcome.
+                if any(r["status"] == "graded" for r in existing):
+                    keeper_id = next(r["id"] for r in existing if r["status"] == "graded")
+                    for r in existing:
+                        if r["id"] != keeper_id:
+                            c.execute("DELETE FROM predictions WHERE id = ?", (r["id"],))
+                    return keeper_id
+                c.execute("DELETE FROM predictions WHERE game_id = ?", (game_id,))
         c.execute("""
             INSERT INTO predictions
             (game_id, game_date, home_team, away_team, home_pitcher_id, away_pitcher_id,
@@ -104,6 +114,18 @@ def log_prediction(home_team, away_team, prediction, game_id=None, game_date=Non
             json.dumps(features), json.dumps(weights or {}), now
         ))
         return c.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def get_by_game_id(game_id):
+    """Return the (single) prediction row for a game_id, or None."""
+    init_db()
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM predictions WHERE game_id = ? "
+            "ORDER BY (status='graded') DESC, id ASC LIMIT 1",
+            (game_id,)
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def dedupe_existing():
