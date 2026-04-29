@@ -386,6 +386,100 @@ async def auto_predict_run_now():
     return {"predicted": predicted, "skipped": skipped}
 
 
+@router.post("/predictions/backfill")
+async def predictions_backfill(request: Request):
+    """Re-create predictions for a date range of past Final games.
+
+    For each Final game we don't already have a prediction for, run the
+    predictor (using the actual played lineup from the boxscore) and log it.
+    Then grade everything in one pass.
+    """
+    payload = await request.json() if (await request.body()) else {}
+    days = int(payload.get("days") or 0)
+    start = payload.get("start_date")
+    end = payload.get("end_date")
+    if days and not start and not end:
+        from datetime import date as _date, timedelta as _td
+        end_d = _date.today() - _td(days=1)
+        start_d = end_d - _td(days=days - 1)
+        start, end = start_d.isoformat(), end_d.isoformat()
+    if not start or not end:
+        return JSONResponse({"error": "Provide start_date+end_date or days"}, status_code=400)
+
+    return await asyncio.to_thread(_run_backfill, start, end)
+
+
+def _run_backfill(start_date, end_date):
+    """Synchronous backfill — call from a worker thread."""
+    import requests as _rq
+    from app.services.mlb import TEAM_IDS
+
+    # Build team_id → preferred code map (skip aliases like "AZ", prefer "ARI")
+    PREFERRED = {"ARI", "ATL", "BAL", "BOS", "CHC", "CWS", "CIN", "CLE", "COL",
+                 "DET", "HOU", "KC", "LAA", "LAD", "MIA", "MIL", "MIN", "NYM",
+                 "NYY", "OAK", "ATH", "PHI", "PIT", "SD", "SF", "SEA", "STL",
+                 "TB", "TEX", "TOR", "WSH"}
+    id_to_code = {}
+    for code, tid in TEAM_IDS.items():
+        if tid not in id_to_code or code in PREFERRED:
+            id_to_code[tid] = code
+
+    url = (f"https://statsapi.mlb.com/api/v1/schedule?sportId=1"
+           f"&startDate={start_date}&endDate={end_date}&gameType=R")
+    try:
+        resp = _rq.get(url, timeout=30).json()
+    except Exception as e:
+        return {"error": f"Schedule fetch failed: {e}"}
+
+    games = []
+    for de in resp.get("dates", []):
+        for g in de.get("games", []):
+            if g["status"].get("detailedState") not in ("Final", "Game Over", "Completed Early"):
+                continue
+            home_id = g["teams"]["home"]["team"]["id"]
+            away_id = g["teams"]["away"]["team"]["id"]
+            home_code = id_to_code.get(home_id)
+            away_code = id_to_code.get(away_id)
+            if not home_code or not away_code:
+                continue
+            games.append({
+                "game_id": g["gamePk"],
+                "date": de["date"],
+                "home_team": home_code,
+                "away_team": away_code,
+            })
+
+    print(f"[backfill] {start_date} -> {end_date}: {len(games)} Final games")
+    predicted = 0
+    skipped_existing = 0
+    errors = []
+    for i, g in enumerate(games, 1):
+        existing = tracking.get_by_game_id(g["game_id"])
+        if existing:
+            skipped_existing += 1
+            continue
+        try:
+            _predict_for_game(g["home_team"], g["away_team"],
+                              g["game_id"], g["date"], None, None, True)
+            predicted += 1
+            if predicted % 10 == 0:
+                print(f"[backfill] {predicted}/{len(games)} predicted...")
+        except Exception as e:
+            errors.append({"game_id": g["game_id"], "error": str(e)})
+
+    print(f"[backfill] grading {predicted} fresh predictions")
+    grade_info = tracking.grade_pending(limit=2000)
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "games_found": len(games),
+        "newly_predicted": predicted,
+        "already_existed": skipped_existing,
+        "graded_now": grade_info.get("graded", 0),
+        "errors": errors[:20],
+    }
+
+
 @router.post("/tune-from-history")
 async def tune_from_history(request: Request):
     """Tune weights using the user's own graded predictions as the test set."""

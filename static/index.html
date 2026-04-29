@@ -316,6 +316,21 @@
     </div>
 
     <div class="section">
+      <h2>Backfill past games</h2>
+      <p style="font-size:0.85rem; color:#888; margin-bottom:14px;">
+        Re-create predictions for any Final games you don't already have logged.
+        Uses the actual lineup that played. Slow first run (a few minutes).
+      </p>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <label style="font-size:0.85rem;">Days back:
+          <input id="backfillDays" type="number" value="7" min="1" max="60" style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; width:80px; margin-left:6px;">
+        </label>
+        <button class="trade-btn" onclick="runBackfill()">▶ Backfill</button>
+        <span id="backfillStatus" style="font-size:0.85rem; color:#888;"></span>
+      </div>
+    </div>
+
+    <div class="section">
       <h2>Prediction History</h2>
       <table>
         <thead><tr>
@@ -1284,6 +1299,41 @@
     if (!confirm('Delete ALL tracked predictions? This cannot be undone.')) return;
     await fetch(`${API}/predictions`, { method: 'DELETE' });
     await loadPredictionHistory();
+  }
+
+  async function runBackfill() {
+    const days = parseInt(document.getElementById('backfillDays').value || '7', 10);
+    const status = document.getElementById('backfillStatus');
+    if (!confirm(`Backfill predictions for the last ${days} days? This will take a few minutes.`)) return;
+    const start = Date.now();
+    let elapsed;
+    const ticker = setInterval(() => {
+      const s = Math.floor((Date.now() - start) / 1000);
+      status.textContent = `Running… ${Math.floor(s / 60)}m ${s % 60}s elapsed`;
+    }, 1000);
+    try {
+      const r = await fetch(`${API}/predictions/backfill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days }),
+      }).then(r => r.json());
+      clearInterval(ticker);
+      if (r.error) {
+        status.textContent = 'Failed: ' + r.error;
+        return;
+      }
+      status.innerHTML =
+        `Done · found <b>${r.games_found}</b> Final games · ` +
+        `newly predicted <b style="color:#4fc3f7">${r.newly_predicted}</b> · ` +
+        `already had <b>${r.already_existed}</b> · ` +
+        `graded <b>${r.graded_now}</b>`;
+      todayGamesCache = null;
+      loadPredictionHistory();
+      if (currentDailyDate) setDailyDate(currentDailyDate);
+    } catch (e) {
+      clearInterval(ticker);
+      status.textContent = 'Failed: ' + e.message;
+    }
   }
 
   // ----- TUNER -----
