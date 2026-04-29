@@ -14,8 +14,10 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-CHECK_INTERVAL_SECONDS = int(os.getenv("AUTO_PREDICT_INTERVAL_SECONDS", 15 * 60))
-PREDICT_WINDOW_MIN = int(os.getenv("AUTO_PREDICT_WINDOW_MIN", 90))
+CHECK_INTERVAL_SECONDS = int(os.getenv("AUTO_PREDICT_INTERVAL_SECONDS", 2 * 60 * 60))
+# Window must be >= interval / 60 or games slip between checks. Default window
+# slightly exceeds the interval so every game gets at least one chance.
+PREDICT_WINDOW_MIN = int(os.getenv("AUTO_PREDICT_WINDOW_MIN", 150))
 SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
 
 # Public state — exposed via /api/auto-predict/status
