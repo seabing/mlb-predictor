@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.auth import AuthMiddleware, admin_authorized, login_router
 from app.core.config import settings
 from app.mlb.routes import router as mlb_data_router
+from app.predictions.routes import router as predictions_router
 from app.routes.mlb import router as legacy_router
 from app.services.scheduler import auto_predict_loop
 
@@ -51,8 +52,9 @@ app.include_router(login_router)
 
 # Feature routes — each step of the refactor moves more endpoints here
 app.include_router(mlb_data_router, prefix="/api")
-# Legacy router still holds: salaries, trades, weights, predict, predictions,
-# backtest, tune, auto-predict. Shrinks with each refactor step.
+app.include_router(predictions_router, prefix="/api")
+# Legacy router still holds: salaries, trades, backtest, tune, auto-predict.
+# Shrinks with each refactor step.
 app.include_router(legacy_router, prefix="/api")
 
 
