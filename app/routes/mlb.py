@@ -1,27 +1,16 @@
 import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from app.services.mlb import get_roster, get_schedule, get_upcoming, get_lineup, get_last_lineup
+from app.services.mlb import get_roster, get_schedule, get_lineup
 from app.services.trades import get_trades, add_trade, reset_trades
 from app.services.predict import predict_game
 from app.services.predict import load_weights, save_weights, DEFAULT_HIT_WEIGHTS, DEFAULT_PITCH_WEIGHTS, DEFAULT_BALANCE
 from app.services import tracking
 from app.services import backtest as bt
 
+# Legacy router — features are migrating out into app/<feature>/routes.py.
+# Once empty, this file goes away entirely.
 router = APIRouter()
-
-@router.get("/roster/{team_code}")
-def roster(team_code: str):
-    result = get_roster(team_code)
-    if "error" in result:
-        return result
-    # Enrich with salary/contract data; degrade silently on failure
-    try:
-        from app.services.salaries import enrich_roster
-        enrich_roster(team_code, result.get("roster", []))
-    except Exception as e:
-        print(f"[roster] salary enrichment failed: {e}")
-    return result
 
 
 @router.get("/salaries/status")
@@ -48,13 +37,6 @@ def salaries_clear():
     from app.services.salaries import clear_cache
     return clear_cache()
 
-@router.get("/schedule/{team_code}")
-def schedule(team_code: str, date: str = None):
-    return get_schedule(team_code, date)
-
-@router.get("/upcoming/{team_code}")
-def upcoming(team_code: str, days: int = 7):
-    return get_upcoming(team_code, days)
 
 @router.get("/trades")
 def trades():
@@ -69,21 +51,6 @@ async def trade(request: Request):
 def reset():
     return reset_trades()
 
-@router.get("/lineup/{game_id}")
-def lineup(game_id: int):
-    return get_lineup(game_id)
-
-@router.get("/hitters/{team_code}")
-def hitters(team_code: str):
-    result = get_roster(team_code)
-    if "error" in result:
-        return result
-    hitters = [p for p in result["roster"] if p["position_type"] != "Pitcher" and p["status"] == "Active"]
-    return {"team": team_code, "hitters": hitters}
-
-@router.get("/last-lineup/{team_code}")
-def last_lineup(team_code: str):
-    return get_last_lineup(team_code)
 
 @router.get("/weights")
 def get_weights():
@@ -105,24 +72,6 @@ def reset_weights():
     save_weights(weights)
     return {"status": "reset"}
 
-@router.get("/bullpen/{team_code}")
-def bullpen(team_code: str):
-    from app.services.stats import get_bullpen_era
-    result = get_roster(team_code)
-    if "error" in result:
-        return result
-    team_id = result["team_id"]
-    era = get_bullpen_era(team_id)
-    return {"team": team_code, "bullpen_era": era}
-
-@router.get("/form/{team_code}")
-def form(team_code: str):
-    from app.services.stats import get_recent_form
-    result = get_roster(team_code)
-    if "error" in result:
-        return result
-    team_id = result["team_id"]
-    return get_recent_form(team_id)
 
 def _predict_for_game(home_team, away_team, game_id=None, game_date=None,
                       manual_home_lineup=None, manual_away_lineup=None,
