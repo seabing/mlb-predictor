@@ -206,6 +206,95 @@ class PredictionStore(SqliteStore):
             pending=pending,
         ).to_dict()
 
+    # ---- calibration ----
+
+    def calibration(self, bucket_width: float = 0.05) -> dict:
+        """Reliability diagram data: bucket graded predictions by pick-confidence
+        and compare predicted probability against actual win rate.
+
+        Each prediction contributes its `pick_prob` = max(home_win_pct, away_win_pct) / 100
+        to the bucket containing that probability. Buckets span [0.50, 1.00].
+
+        Returns:
+          {
+            "buckets": [
+              {lower, upper, midpoint, n, predicted_avg, actual_rate, gap},
+              ...
+            ],
+            "total": int,
+            "weighted_gap": float,   # mean (predicted - actual) weighted by n
+            "interpretation": str,
+          }
+        """
+        self.init()
+        with self.connect() as c:
+            rows = c.execute(
+                "SELECT home_win_pct, away_win_pct, correct "
+                "FROM predictions WHERE status = 'graded'"
+            ).fetchall()
+
+        # Build buckets covering [0.50, 1.00] in `bucket_width` steps
+        edges: list[float] = []
+        x = 0.50
+        while x < 1.00 + 1e-9:
+            edges.append(round(x, 4))
+            x += bucket_width
+        buckets: list[dict] = []
+        for i in range(len(edges) - 1):
+            buckets.append({
+                "lower": edges[i],
+                "upper": edges[i + 1],
+                "midpoint": round((edges[i] + edges[i + 1]) / 2, 4),
+                "n": 0,
+                "correct": 0,
+                "predicted_sum": 0.0,
+            })
+
+        total = 0
+        sum_pred = 0.0
+        sum_correct = 0
+        for r in rows:
+            home = (r["home_win_pct"] or 50) / 100.0
+            away = (r["away_win_pct"] or 50) / 100.0
+            pick_prob = max(home, away)
+            if pick_prob < 0.50:
+                continue  # shouldn't happen; the pick is always ≥ 50%
+            # Find bucket. Last bucket is closed on the right so 1.00 lands in it.
+            idx = min(int((pick_prob - 0.50) / bucket_width), len(buckets) - 1)
+            b = buckets[idx]
+            b["n"] += 1
+            b["correct"] += int(r["correct"] or 0)
+            b["predicted_sum"] += pick_prob
+            total += 1
+            sum_pred += pick_prob
+            sum_correct += int(r["correct"] or 0)
+
+        for b in buckets:
+            if b["n"]:
+                b["predicted_avg"] = round(b["predicted_sum"] / b["n"], 4)
+                b["actual_rate"] = round(b["correct"] / b["n"], 4)
+                b["gap"] = round(b["predicted_avg"] - b["actual_rate"], 4)
+            else:
+                b["predicted_avg"] = None
+                b["actual_rate"] = None
+                b["gap"] = None
+            # Drop intermediate sum; keep response lean
+            del b["predicted_sum"]
+
+        # Sample-weighted average over/under-confidence
+        if total > 0:
+            weighted_gap = round((sum_pred - sum_correct) / total, 4)
+        else:
+            weighted_gap = None
+        interpretation = _calibration_interpretation(weighted_gap, total)
+
+        return {
+            "buckets": buckets,
+            "total": total,
+            "weighted_gap": weighted_gap,
+            "interpretation": interpretation,
+        }
+
     # ---- grading ----
 
     def grade_pending(self, limit: int = 200) -> dict:
@@ -309,6 +398,27 @@ class PredictionStore(SqliteStore):
         with self.connect() as c:
             c.execute("DELETE FROM predictions")
         return {"status": "reset"}
+
+
+def _calibration_interpretation(weighted_gap: float | None, total: int) -> str:
+    """Plain-English summary of a calibration gap.
+
+    Positive gap = model said higher probability than reality (overconfident).
+    Negative gap = model said lower than reality (underconfident).
+    """
+    if weighted_gap is None or total == 0:
+        return "no graded predictions yet"
+    if total < 30:
+        return f"only {total} graded predictions — too few to draw conclusions"
+    pct = abs(weighted_gap) * 100
+    direction = "overconfident" if weighted_gap > 0 else "underconfident"
+    if pct < 2:
+        return f"well calibrated (gap {pct:.1f}%)"
+    if pct < 5:
+        return f"slightly {direction} (gap {pct:.1f}%)"
+    if pct < 10:
+        return f"moderately {direction} (gap {pct:.1f}%)"
+    return f"strongly {direction} (gap {pct:.1f}%)"
 
 
 # Module-level singleton

@@ -331,6 +331,29 @@
     </div>
 
     <div class="section">
+      <h2>Calibration</h2>
+      <p style="font-size:0.78rem; color:#888; margin-bottom:14px;">
+        Are picks at 70% confidence actually right 70% of the time?
+        Dots above the diagonal = the model was <b>underconfident</b>; below = <b>overconfident</b>.
+        Dot size reflects sample count.
+      </p>
+      <div id="calibrationSummary" style="font-size:0.85rem; color:#4fc3f7; margin-bottom:14px;"></div>
+      <div id="calibrationChart" style="width:100%; max-width:520px; margin:0 auto;"></div>
+      <table style="margin-top:18px;">
+        <thead>
+          <tr>
+            <th>Bucket</th>
+            <th style="text-align:right;">Predicted avg</th>
+            <th style="text-align:right;">Actual rate</th>
+            <th style="text-align:right;">Gap</th>
+            <th style="text-align:right;">n</th>
+          </tr>
+        </thead>
+        <tbody id="calibrationTable"></tbody>
+      </table>
+    </div>
+
+    <div class="section">
       <h2>Results by date</h2>
       <p style="font-size:0.78rem; color:#888; margin-bottom:12px;">
         Click a row to see every prediction for that day in the daily view above.
@@ -1251,17 +1274,128 @@
     const tbody = document.getElementById('resultsByDate');
     tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading...</td></tr>';
     try {
-      const [summary, dates] = await Promise.all([
+      const [summary, dates, calib] = await Promise.all([
         fetch(`${API}/predictions/summary`).then(r => r.json()),
         fetch(`${API}/predictions/dates`).then(r => r.json()),
+        fetch(`${API}/predictions/calibration`).then(r => r.json()),
       ]);
       renderRunningAccuracy(summary);
       _resultsDates = (dates && dates.dates) || [];
       _resultsShown = RESULTS_DEFAULT_DAYS;
       renderResultsByDate();
+      renderCalibration(calib);
     } catch (e) {
       tbody.innerHTML = '<tr><td colspan="5" class="loading">Failed to load: ' + e.message + '</td></tr>';
     }
+  }
+
+  function renderCalibration(calib) {
+    const summary = document.getElementById('calibrationSummary');
+    const chart = document.getElementById('calibrationChart');
+    const table = document.getElementById('calibrationTable');
+    const buckets = (calib && calib.buckets) || [];
+    const populated = buckets.filter(b => b.n > 0);
+
+    if (!populated.length) {
+      summary.textContent = 'No graded predictions yet — calibration becomes useful after ~30+ games.';
+      chart.innerHTML = '';
+      table.innerHTML = '<tr><td colspan="5" class="loading">No data</td></tr>';
+      return;
+    }
+
+    summary.innerHTML =
+      `<b>${calib.total}</b> graded predictions · ${calib.interpretation}` +
+      (calib.weighted_gap != null
+        ? ` · weighted gap <b style="color:${Math.abs(calib.weighted_gap) < 0.02 ? '#2e7d32' : (calib.weighted_gap > 0 ? '#ff8888' : '#9cdcfe')};">${(calib.weighted_gap * 100).toFixed(1)}%</b>`
+        : '');
+
+    chart.innerHTML = drawCalibrationSVG(buckets);
+
+    table.innerHTML = buckets.map(b => {
+      const range = `${Math.round(b.lower * 100)}–${Math.round(b.upper * 100)}%`;
+      if (!b.n) {
+        return `<tr style="color:#444;">
+          <td>${range}</td>
+          <td style="text-align:right;">—</td>
+          <td style="text-align:right;">—</td>
+          <td style="text-align:right;">—</td>
+          <td style="text-align:right;">0</td>
+        </tr>`;
+      }
+      const pred = (b.predicted_avg * 100).toFixed(1) + '%';
+      const actual = (b.actual_rate * 100).toFixed(1) + '%';
+      const gap = (b.gap * 100).toFixed(1) + '%';
+      const gapColor = Math.abs(b.gap) < 0.03 ? '#888'
+        : (b.gap > 0 ? '#ff8888' : '#9cdcfe');
+      return `<tr>
+        <td>${range}</td>
+        <td style="text-align:right;">${pred}</td>
+        <td style="text-align:right;">${actual}</td>
+        <td style="text-align:right; color:${gapColor};">${gap}</td>
+        <td style="text-align:right; color:#888;">${b.n}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function drawCalibrationSVG(buckets) {
+    // Plot maps probability space [0.50, 1.00] x [0, 1] to a 360x360 square,
+    // with 50px margins for labels.
+    const W = 460, H = 460, MARGIN = 50;
+    const innerW = W - MARGIN * 2, innerH = H - MARGIN * 2;
+    // x: predicted prob (0.50–1.00 → left to right)
+    // y: actual rate (0–1 → bottom to top, so SVG y is inverted)
+    const xMin = 0.50, xMax = 1.00;
+    const px = p => MARGIN + ((p - xMin) / (xMax - xMin)) * innerW;
+    const py = r => MARGIN + (1 - r) * innerH;
+
+    // Diagonal reference line (perfect calibration)
+    // For x in [0.5, 1.0], y = x.
+    const diagX1 = px(0.5), diagY1 = py(0.5);
+    const diagX2 = px(1.0), diagY2 = py(1.0);
+
+    // Grid lines every 0.1 on both axes
+    let grid = '';
+    for (let v = 0.5; v <= 1.0001; v += 0.1) {
+      grid += `<line x1="${px(v)}" y1="${MARGIN}" x2="${px(v)}" y2="${H - MARGIN}" stroke="#1e2233" stroke-width="1"/>`;
+    }
+    for (let v = 0; v <= 1.0001; v += 0.1) {
+      grid += `<line x1="${MARGIN}" y1="${py(v)}" x2="${W - MARGIN}" y2="${py(v)}" stroke="#1e2233" stroke-width="1"/>`;
+    }
+
+    // Axis labels
+    let labels = '';
+    for (let v = 0.5; v <= 1.0001; v += 0.1) {
+      labels += `<text x="${px(v)}" y="${H - MARGIN + 18}" fill="#888" font-size="11" text-anchor="middle">${(v * 100).toFixed(0)}%</text>`;
+    }
+    for (let v = 0; v <= 1.0001; v += 0.2) {
+      labels += `<text x="${MARGIN - 8}" y="${py(v) + 4}" fill="#888" font-size="11" text-anchor="end">${(v * 100).toFixed(0)}%</text>`;
+    }
+    labels += `<text x="${W / 2}" y="${H - 8}" fill="#aaa" font-size="12" text-anchor="middle">predicted probability →</text>`;
+    labels += `<text x="14" y="${H / 2}" fill="#aaa" font-size="12" text-anchor="middle" transform="rotate(-90, 14, ${H / 2})">actual win rate →</text>`;
+
+    // Bucket dots; size = sqrt(n) * scale, color shifts with gap sign
+    const populated = buckets.filter(b => b.n > 0);
+    const maxN = Math.max(...populated.map(b => b.n), 1);
+    const dots = populated.map(b => {
+      const cx = px(b.predicted_avg);
+      const cy = py(b.actual_rate);
+      const r = 4 + Math.sqrt(b.n / maxN) * 14;
+      const color = Math.abs(b.gap) < 0.03 ? '#4fc3f7'
+        : (b.gap > 0 ? '#ff8888' : '#9cdcfe');
+      return `<g>
+        <line x1="${cx}" y1="${cy}" x2="${px(b.predicted_avg)}" y2="${py(b.predicted_avg)}" stroke="${color}" stroke-width="1" stroke-dasharray="2,2" opacity="0.5"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" fill-opacity="0.7" stroke="#0f1117" stroke-width="1">
+          <title>${(b.lower*100).toFixed(0)}–${(b.upper*100).toFixed(0)}% bucket\npredicted ${(b.predicted_avg*100).toFixed(1)}%, actual ${(b.actual_rate*100).toFixed(1)}%\nn=${b.n}</title>
+        </circle>
+      </g>`;
+    }).join('');
+
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="background:#12151f; border-radius:8px;">
+      ${grid}
+      <line x1="${diagX1}" y1="${diagY1}" x2="${diagX2}" y2="${diagY2}" stroke="#555" stroke-width="2" stroke-dasharray="4,4"/>
+      ${labels}
+      ${dots}
+    </svg>`;
   }
 
   function renderRunningAccuracy(summary) {

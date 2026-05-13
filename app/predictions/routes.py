@@ -188,6 +188,11 @@ def predictions_dates():
     return {"dates": prediction_store.available_dates()}
 
 
+@router.get("/predictions/calibration")
+def predictions_calibration(bucket_width: float = 0.05):
+    return prediction_store.calibration(bucket_width=bucket_width)
+
+
 @router.post("/predictions/grade")
 def predictions_grade():
     return prediction_store.grade_pending()
