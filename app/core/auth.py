@@ -57,8 +57,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Best-effort touch of the visitor record; never block the request.
         try:
-            from app.services.visitors import touch  # moved later in refactor
-            touch(
+            from app.visitors.services.store import visitor_store
+            visitor_store.touch(
                 visitor_id,
                 path=path,
                 user_agent=request.headers.get("user-agent", ""),
@@ -104,8 +104,8 @@ async def identify(request: Request):
     if not email or "@" not in email or "." not in email.split("@")[-1]:
         return JSONResponse({"error": "Enter a valid email"}, status_code=400)
     try:
-        from app.services.visitors import register  # moved later in refactor
-        visitor_id = register(
+        from app.visitors.services.store import visitor_store
+        visitor_id = visitor_store.register(
             email,
             user_agent=request.headers.get("user-agent", ""),
             ip=_client_ip(request),

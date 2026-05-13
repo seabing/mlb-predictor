@@ -14,10 +14,10 @@ def roster(team_code: str):
     result = client.get_roster(team_code)
     if "error" in result:
         return result
-    # Salary enrichment — degrade silently on failure (moves to salaries/ later)
+    # Salary enrichment — degrade silently on failure
     try:
-        from app.services.salaries import enrich_roster
-        enrich_roster(team_code, result.get("roster", []))
+        from app.salaries.services.spotrac import spotrac
+        spotrac.enrich_roster(team_code, result.get("roster", []))
     except Exception as e:
         print(f"[roster] salary enrichment failed: {e}")
     return result

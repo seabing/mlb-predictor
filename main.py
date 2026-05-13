@@ -5,25 +5,27 @@ Responsibilities here are deliberately narrow:
   - Mount auth middleware + login router
   - Include feature routers
   - Manage the auto-predict background loop via lifespan
-  - Serve a couple of top-level static pages (/, /admin)
+  - Serve top-level static pages (/, /health)
 
 Everything else lives in a feature folder under app/.
 """
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.core.auth import AuthMiddleware, admin_authorized, login_router
+from app.core.auth import AuthMiddleware, login_router
 from app.core.config import settings
 from app.mlb.routes import router as mlb_data_router
 from app.predictions.routes import router as predictions_router
-from app.routes.mlb import router as legacy_router
+from app.salaries.routes import router as salaries_router
 from app.scheduler.routes import router as scheduler_router
 from app.scheduler.services.auto_predict import scheduler as auto_predict_scheduler
+from app.trades.routes import router as trades_router
 from app.tuning.routes import router as tuning_router
+from app.visitors.routes import admin_pages, router as visitors_router
 
 
 @asynccontextmanager
@@ -49,21 +51,19 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(AuthMiddleware)
 
-# Auth + identify + admin-login endpoints
+# Top-level auth + admin static pages (no /api prefix)
 app.include_router(login_router)
+app.include_router(admin_pages)
 
-# Feature routes — each step of the refactor moves more endpoints here
+# Feature API routers
 app.include_router(mlb_data_router, prefix="/api")
 app.include_router(predictions_router, prefix="/api")
 app.include_router(tuning_router, prefix="/api")
 app.include_router(scheduler_router, prefix="/api")
-# Legacy router still holds: salaries, trades. Final cleanup in step 6.
-app.include_router(legacy_router, prefix="/api")
+app.include_router(trades_router, prefix="/api")
+app.include_router(salaries_router, prefix="/api")
+app.include_router(visitors_router, prefix="/api")
 
-
-# ---------------------------------------------------------------------------
-# Top-level pages and admin endpoints (admin endpoints move to visitors/ later)
-# ---------------------------------------------------------------------------
 
 @app.get("/")
 def root():
@@ -73,19 +73,6 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/admin")
-def admin_page():
-    return FileResponse("static/admin.html")
-
-
-@app.get("/api/admin/visitors")
-def admin_visitors(request: Request):
-    if not admin_authorized(request):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    from app.services.visitors import summary
-    return summary()
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
