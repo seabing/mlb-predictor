@@ -331,14 +331,21 @@
     </div>
 
     <div class="section">
-      <h2>Prediction History</h2>
+      <h2>Results by date</h2>
+      <p style="font-size:0.78rem; color:#888; margin-bottom:12px;">
+        Click a row to see every prediction for that day in the daily view above.
+      </p>
       <table>
         <thead><tr>
-          <th>Date</th><th>Matchup</th><th>Predicted</th><th>Confidence</th>
-          <th>Actual</th><th>Score</th><th>Result</th>
+          <th>Date</th>
+          <th style="text-align:right;">Games</th>
+          <th style="text-align:right;">Record</th>
+          <th style="text-align:right;">Accuracy</th>
+          <th style="text-align:right;">Pending</th>
         </tr></thead>
-        <tbody id="predTable"><tr><td colspan="7" class="loading">Loading...</td></tr></tbody>
+        <tbody id="resultsByDate"><tr><td colspan="5" class="loading">Loading...</td></tr></tbody>
       </table>
+      <div id="resultsControls" style="margin-top:14px; display:flex; gap:10px; align-items:center; font-size:0.85rem; color:#888;"></div>
     </div>
   </div>
 
@@ -1234,53 +1241,101 @@
     if (di) di.addEventListener('change', e => setDailyDate(e.target.value));
   })();
 
-  async function loadPredictionHistory() {
-    const tbody = document.getElementById('predTable');
-    tbody.innerHTML = '<tr><td colspan="7" class="loading">Loading...</td></tr>';
-    try {
-      const [summary, list] = await Promise.all([
-        fetch(`${API}/predictions/summary`).then(r => r.json()),
-        fetch(`${API}/predictions?limit=200`).then(r => r.json()),
-      ]);
-      const rec = (summary.total ?? 0)
-        ? `${summary.correct}-${summary.total - summary.correct}` : '—';
-      document.getElementById('predRecord').textContent = rec;
-      document.getElementById('predAccuracy').textContent =
-        summary.accuracy != null ? (summary.accuracy * 100).toFixed(1) + '%' : '—';
-      document.getElementById('predLogLoss').textContent =
-        summary.log_loss != null ? summary.log_loss.toFixed(4) : '—';
-      document.getElementById('predBrier').textContent =
-        summary.brier != null ? summary.brier.toFixed(4) : '—';
-      document.getElementById('predPending').textContent = summary.pending ?? 0;
+  // How many date rows to show by default. The user can expand from there.
+  const RESULTS_DEFAULT_DAYS = 8;     // today + last 7 days
+  const RESULTS_PAGE_SIZE = 14;       // ~2 more weeks per "show older" click
+  let _resultsDates = [];             // full list, newest first
+  let _resultsShown = RESULTS_DEFAULT_DAYS;
 
-      const rows = (list.predictions || []).map(p => {
-        const conf = Math.max(p.home_win_pct || 0, p.away_win_pct || 0).toFixed(1) + '%';
-        let result = '';
-        if (p.status === 'graded') {
-          result = p.correct
-            ? '<span class="badge badge-active">✓</span>'
-            : '<span class="badge badge-il">✗</span>';
-        } else {
-          result = '<span class="badge badge-traded">pending</span>';
-        }
-        const score = (p.home_score != null && p.away_score != null)
-          ? `${p.away_score}–${p.home_score}` : '';
-        const actual = p.actual_winner || '';
-        const date = p.game_date || (p.created_at || '').slice(0, 10);
-        return `<tr>
-          <td>${date}</td>
-          <td>${p.away_team} @ ${p.home_team}</td>
-          <td>${p.predicted_winner}</td>
-          <td>${conf}</td>
-          <td>${actual}</td>
-          <td>${score}</td>
-          <td>${result}</td>
-        </tr>`;
-      }).join('');
-      tbody.innerHTML = rows || '<tr><td colspan="7" class="loading">No predictions yet. Make one from the Matchup tab.</td></tr>';
+  async function loadPredictionHistory() {
+    const tbody = document.getElementById('resultsByDate');
+    tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading...</td></tr>';
+    try {
+      const [summary, dates] = await Promise.all([
+        fetch(`${API}/predictions/summary`).then(r => r.json()),
+        fetch(`${API}/predictions/dates`).then(r => r.json()),
+      ]);
+      renderRunningAccuracy(summary);
+      _resultsDates = (dates && dates.dates) || [];
+      _resultsShown = RESULTS_DEFAULT_DAYS;
+      renderResultsByDate();
     } catch (e) {
-      tbody.innerHTML = '<tr><td colspan="7" class="loading">Failed to load: ' + e.message + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="loading">Failed to load: ' + e.message + '</td></tr>';
     }
+  }
+
+  function renderRunningAccuracy(summary) {
+    const rec = (summary.total ?? 0)
+      ? `${summary.correct}-${summary.total - summary.correct}` : '—';
+    document.getElementById('predRecord').textContent = rec;
+    document.getElementById('predAccuracy').textContent =
+      summary.accuracy != null ? (summary.accuracy * 100).toFixed(1) + '%' : '—';
+    document.getElementById('predLogLoss').textContent =
+      summary.log_loss != null ? summary.log_loss.toFixed(4) : '—';
+    document.getElementById('predBrier').textContent =
+      summary.brier != null ? summary.brier.toFixed(4) : '—';
+    document.getElementById('predPending').textContent = summary.pending ?? 0;
+  }
+
+  function renderResultsByDate() {
+    const tbody = document.getElementById('resultsByDate');
+    const controls = document.getElementById('resultsControls');
+    if (!_resultsDates.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="loading">No predictions logged yet. Open today\'s games above to start tracking, or use the Backfill tool to seed past days.</td></tr>';
+      controls.innerHTML = '';
+      return;
+    }
+    const visible = _resultsDates.slice(0, _resultsShown);
+    const todayIso = todayISO();
+    tbody.innerHTML = visible.map(d => {
+      const isToday = d.game_date === todayIso;
+      const graded = d.graded || 0;
+      const correct = d.correct || 0;
+      const losses = graded - correct;
+      const total = d.n || 0;
+      const pending = total - graded;
+      const acc = graded ? ((correct / graded) * 100).toFixed(1) + '%' : '—';
+      const record = graded ? `${correct}-${losses}` : '—';
+      const dateLabel = isToday ? `${d.game_date} · today` : d.game_date;
+      return `<tr style="cursor:pointer;" onclick="drillIntoDate('${d.game_date}')">
+        <td>${dateLabel}</td>
+        <td style="text-align:right;">${total}</td>
+        <td style="text-align:right;">${record}</td>
+        <td style="text-align:right;">${acc}</td>
+        <td style="text-align:right; color:${pending ? '#f57c00' : '#555'};">${pending || '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const remaining = _resultsDates.length - _resultsShown;
+    if (remaining > 0) {
+      const next = Math.min(remaining, RESULTS_PAGE_SIZE);
+      controls.innerHTML =
+        `<span>Showing ${_resultsShown} of ${_resultsDates.length} dates.</span>` +
+        `<button class="trade-btn" onclick="showMoreResults()">Show ${next} more</button>` +
+        (_resultsShown > RESULTS_DEFAULT_DAYS
+          ? `<button class="trade-btn" onclick="collapseResults()">Collapse</button>` : '');
+    } else if (_resultsDates.length > RESULTS_DEFAULT_DAYS) {
+      controls.innerHTML =
+        `<span>Showing all ${_resultsDates.length} dates.</span>` +
+        `<button class="trade-btn" onclick="collapseResults()">Collapse</button>`;
+    } else {
+      controls.innerHTML = '';
+    }
+  }
+
+  function showMoreResults() {
+    _resultsShown += RESULTS_PAGE_SIZE;
+    renderResultsByDate();
+  }
+  function collapseResults() {
+    _resultsShown = RESULTS_DEFAULT_DAYS;
+    renderResultsByDate();
+  }
+  function drillIntoDate(iso) {
+    setDailyDate(iso);
+    // Scroll the daily view into focus
+    const target = document.getElementById('dailyHeader');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function gradePending() {
