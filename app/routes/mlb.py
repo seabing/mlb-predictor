@@ -1,14 +1,11 @@
 """Legacy router — shrinking as features migrate to their own folders.
 
 Still here:
-  - /salaries/*           (moves to app/salaries/ later)
-  - /trades, /trades/*    (moves to app/trades/ later)
-  - /auto-predict/*       (moves to app/scheduler/ in step 5)
+  - /salaries/*    (moves to app/salaries/ in step 6)
+  - /trades, /trades/*  (moves to app/trades/ in step 6)
 
 Once empty, this file goes away.
 """
-import asyncio
-
 from fastapi import APIRouter, Request
 
 from app.services.trades import add_trade, get_trades, reset_trades
@@ -59,18 +56,3 @@ async def trade(request: Request):
 @router.delete("/trades")
 def reset():
     return reset_trades()
-
-
-# ---------- auto-predict scheduler ----------
-
-@router.get("/auto-predict/status")
-def auto_predict_status():
-    from app.services.scheduler import state
-    return state
-
-
-@router.post("/auto-predict/run-now")
-async def auto_predict_run_now():
-    from app.services.scheduler import run_auto_predict_sync
-    predicted, skipped = await asyncio.to_thread(run_auto_predict_sync)
-    return {"predicted": predicted, "skipped": skipped}
