@@ -1145,7 +1145,7 @@
           <span>${p.away_team} ${away.toFixed(1)}%</span>
           <span>${home.toFixed(1)}% ${p.home_team}</span>
         </div>
-        <div class="pick">Pick: <b>${pick}</b> (${pickPct}%) ${resultBadge}</div>
+        <div class="pick">Pick: <b>${pick}</b> (${pickPct}%${p.confidence_interval != null ? ` <span style="color:#888;">± ${p.confidence_interval}%</span>` : ''}) ${resultBadge}</div>
         <div class="meta">${scoreLine}</div>
       </div>`;
     }).join('');
@@ -1175,6 +1175,11 @@
       status.textContent = 'Failed: ' + e.message;
       container.innerHTML = '';
     }
+  }
+
+  function ciLabel(g) {
+    return g.confidence_interval != null
+      ? `<span style="color:#888;"> ± ${g.confidence_interval}%</span>` : '';
   }
 
   function renderTodayGames(data) {
@@ -1207,7 +1212,7 @@
           <span>${g.away_team} ${away.toFixed(1)}%</span>
           <span>${home.toFixed(1)}% ${g.home_team}</span>
         </div>
-        <div class="pick">Pick: <b>${pick}</b> (${pickPct}%) · ${g.lineup_source || 'roster'}</div>
+        <div class="pick">Pick: <b>${pick}</b> (${pickPct}%${ciLabel(g)}) · ${g.lineup_source || 'roster'}</div>
         <div class="meta">${time} · ${g.venue || ''} · ${g.status || ''}</div>
       </div>`;
     }).join('');

@@ -18,6 +18,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from app.predictions.services.backfill import last_n_days_range, run_backfill
+from app.predictions.services.confidence import confidence_calculator
 from app.predictions.services.predict_one import predict_one_game
 from app.predictions.services.tracking import prediction_store
 from app.predictions.services.weights import (
@@ -136,7 +137,7 @@ async def predict_today():
         async with sem:
             existing = prediction_store.get_by_game_id(g["game_id"])
             if existing:
-                return {
+                out = {
                     **g,
                     "home_win_pct": existing["home_win_pct"],
                     "away_win_pct": existing["away_win_pct"],
@@ -148,6 +149,15 @@ async def predict_today():
                     "home_score": existing.get("home_score"),
                     "away_score": existing.get("away_score"),
                 }
+                confidence_calculator.annotate(
+                    out,
+                    lineup_source=existing.get("lineup_source") or "logged",
+                    home_team=existing.get("home_team"),
+                    away_team=existing.get("away_team"),
+                    home_pitcher_id=existing.get("home_pitcher_id") or 0,
+                    away_pitcher_id=existing.get("away_pitcher_id") or 0,
+                )
+                return out
             if g["status"] in in_progress or g["status"] in finals:
                 return {**g, "skipped_reason": f"no prediction logged before {g['status']}"}
             try:
@@ -171,11 +181,10 @@ async def predict_today():
 @router.get("/predictions")
 def predictions_list(status: str | None = None, limit: int = 200,
                      game_date: str | None = None):
-    return {
-        "predictions": prediction_store.list(
-            status=status, limit=limit, game_date=game_date,
-        )
-    }
+    rows = prediction_store.list(status=status, limit=limit, game_date=game_date)
+    for p in rows:
+        confidence_calculator.annotate(p)
+    return {"predictions": rows}
 
 
 @router.get("/predictions/summary")

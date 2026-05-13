@@ -9,6 +9,7 @@ and the backfill tool all call into.
 from __future__ import annotations
 
 from app.mlb.client import client as mlb_client
+from app.predictions.services.confidence import confidence_calculator
 from app.predictions.services.engine import prediction_engine
 from app.predictions.services.tracking import prediction_store
 from app.predictions.services.weights import weights_store
@@ -84,6 +85,14 @@ def predict_one_game(
         home_team_id, away_team_id,
     )
     result["lineup_source"] = lineup_source
+    confidence_calculator.annotate(
+        result,
+        lineup_source=lineup_source,
+        home_team=home_team,
+        away_team=away_team,
+        home_pitcher_id=home_pitcher_id,
+        away_pitcher_id=away_pitcher_id,
+    )
 
     log_id = None
     if log and game_id:
