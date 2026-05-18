@@ -12,7 +12,7 @@ auth + identify + admin-auth endpoints).
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
@@ -96,13 +96,37 @@ async def auth(request: Request):
 
 @login_router.post("/identify")
 async def identify(request: Request):
-    # Caller must already have the app-password cookie.
+    """Accept either a plain HTML form POST or a JSON body.
+
+    Form POST (from identify.html): returns 303 redirects so the browser
+    handles cookie storage and navigation itself — no JS timing issues.
+
+    JSON (legacy / API): returns JSON responses as before.
+    """
+    content_type = request.headers.get("content-type", "")
+    is_form = "application/x-www-form-urlencoded" in content_type
+
+    if is_form:
+        form = await request.form()
+        email = (str(form.get("email") or "")).strip().lower()
+    else:
+        body = await request.json()
+        email = (body.get("email") or "").strip().lower()
+
+    # Auth check
     if request.cookies.get("auth_token") != settings.app_password:
+        if is_form:
+            # Redirect to login — session has expired
+            return RedirectResponse(url="/", status_code=303)
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    body = await request.json()
-    email = (body.get("email") or "").strip().lower()
+
+    # Email validation
     if not email or "@" not in email or "." not in email.split("@")[-1]:
+        if is_form:
+            return RedirectResponse(url="/?e=email", status_code=303)
         return JSONResponse({"error": "Enter a valid email"}, status_code=400)
+
+    # Register visitor
     try:
         from app.visitors.services.store import visitor_store
         visitor_id = visitor_store.register(
@@ -111,15 +135,19 @@ async def identify(request: Request):
             ip=_client_ip(request),
         )
     except Exception as e:
+        print(f"[identify] register failed: {e}")
+        if is_form:
+            return RedirectResponse(url="/?e=save", status_code=303)
         return JSONResponse({"error": f"Failed to save: {e}"}, status_code=500)
+
+    # Success — set cookie
+    cookie_kwargs = dict(httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)
+    if is_form:
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie("visitor_id", visitor_id, **cookie_kwargs)
+        return response
     response = JSONResponse({"status": "ok"})
-    response.set_cookie(
-        "visitor_id",
-        visitor_id,
-        httponly=True,
-        samesite="lax",
-        max_age=60 * 60 * 24 * 365,
-    )
+    response.set_cookie("visitor_id", visitor_id, **cookie_kwargs)
     return response
 
 

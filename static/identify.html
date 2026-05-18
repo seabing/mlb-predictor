@@ -23,58 +23,24 @@
 <div class="card">
   <h1>⚾ One last step</h1>
   <p>Enter your email so I know who's stopping by.</p>
-  <form id="form">
+  <form method="POST" action="/identify">
     <label for="email">Email</label>
-    <input id="email" type="email" placeholder="you@example.com" required autocomplete="email" autofocus>
-    <button id="btn" type="submit">Continue</button>
+    <input id="email" name="email" type="email" placeholder="you@example.com" required autocomplete="email" autofocus>
+    <button type="submit">Continue</button>
     <div id="err" class="err"></div>
   </form>
 </div>
 <script>
-  const form = document.getElementById('form');
-  const errEl = document.getElementById('err');
-  const btn = document.getElementById('btn');
-
-  function showError(msg) {
-    errEl.textContent = msg;
-    errEl.style.display = 'block';
-    btn.disabled = false;
-    btn.textContent = 'Continue';
+  const errors = {
+    email: 'Please enter a valid email address.',
+    save:  'Something went wrong on our end — please try again.',
+  };
+  const e = new URLSearchParams(location.search).get('e');
+  if (e) {
+    const el = document.getElementById('err');
+    el.textContent = errors[e] || 'Something went wrong. Please try again.';
+    el.style.display = 'block';
   }
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    errEl.style.display = 'none';
-    const email = document.getElementById('email').value.trim();
-    if (!email || !email.includes('@')) {
-      showError('Please enter a valid email address.');
-      return;
-    }
-    btn.disabled = true;
-    btn.textContent = 'Saving…';
-    try {
-      const resp = await fetch('/identify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email }),
-      });
-      let data = {};
-      try { data = await resp.json(); } catch (_) {}
-      if (!resp.ok) {
-        if (resp.status === 401) {
-          showError('Your session expired — please refresh the page and enter the password again.');
-        } else {
-          showError(data.error || `Something went wrong (${resp.status}). Please try again.`);
-        }
-        return;
-      }
-      btn.textContent = 'Loading…';
-      window.location.href = '/';
-    } catch (e) {
-      showError('Connection error — please check your internet and try again.');
-    }
-  });
 </script>
 </body>
 </html>
