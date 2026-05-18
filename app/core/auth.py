@@ -104,14 +104,21 @@ async def identify(request: Request):
     JSON (legacy / API): returns JSON responses as before.
     """
     content_type = request.headers.get("content-type", "")
-    is_form = "application/x-www-form-urlencoded" in content_type
+    is_json = "application/json" in content_type
+    is_form = not is_json  # treat everything non-JSON as a form POST
 
-    if is_form:
-        form = await request.form()
-        email = (str(form.get("email") or "")).strip().lower()
-    else:
-        body = await request.json()
-        email = (body.get("email") or "").strip().lower()
+    try:
+        if is_form:
+            form = await request.form()
+            email = (str(form.get("email") or "")).strip().lower()
+        else:
+            body = await request.json()
+            email = (body.get("email") or "").strip().lower()
+    except Exception as parse_err:
+        print(f"[identify] body parse failed: {parse_err}")
+        if is_form:
+            return RedirectResponse(url="/?e=save", status_code=303)
+        return JSONResponse({"error": "Bad request"}, status_code=400)
 
     # Auth check
     if request.cookies.get("auth_token") != settings.app_password:
