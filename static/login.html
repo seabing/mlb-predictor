@@ -11,9 +11,10 @@
     h1 { font-size: 1.5rem; color: #4fc3f7; margin-bottom: 8px; }
     p { color: #888; font-size: 0.9rem; margin-bottom: 24px; }
     input { width: 100%; background: #12151f; border: 1px solid #3a3d4e; color: #e0e0e0; padding: 12px 16px; border-radius: 6px; font-size: 1rem; margin-bottom: 16px; }
-    button { width: 100%; background: #4fc3f7; color: #0f1117; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button { width: 100%; background: #4fc3f7; color: #0f1117; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
     button:hover { background: #81d4fa; }
-    .error { color: #ff4444; font-size: 0.85rem; margin-top: 12px; display: none; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .error { color: #ff4444; background: #2a1010; border: 1px solid #ff4444; border-radius: 6px; padding: 10px 14px; font-size: 0.9rem; margin-top: 12px; display: none; }
   </style>
 </head>
 <body>
@@ -25,17 +26,34 @@
     <div class="error" id="error">Wrong password. Try again.</div>
   </div>
   <script>
+    const btn = document.querySelector('button');
+    const errorEl = document.getElementById('error');
+
     async function login() {
       const password = document.getElementById('password').value;
-      const resp = await fetch('/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-      if (resp.ok) {
-        window.location.href = '/';
-      } else {
-        document.getElementById('error').style.display = 'block';
+      if (!password) return;
+      btn.disabled = true;
+      btn.textContent = 'Checking…';
+      errorEl.style.display = 'none';
+      try {
+        const resp = await fetch('/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        if (resp.ok) {
+          btn.textContent = 'Loading…';
+          window.location.href = '/';
+        } else {
+          errorEl.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Enter';
+        }
+      } catch (e) {
+        errorEl.textContent = 'Connection error. Please try again.';
+        errorEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Enter';
       }
     }
   </script>

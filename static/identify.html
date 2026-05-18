@@ -13,10 +13,10 @@
     label { font-size: 0.8rem; color: #aaa; display: block; margin-bottom: 6px; }
     input { width: 100%; background: #2a2d3e; color: #e0e0e0; border: 1px solid #3a3d4e; padding: 10px 12px; border-radius: 6px; font-size: 0.95rem; margin-bottom: 14px; }
     input:focus { outline: none; border-color: #4fc3f7; }
-    button { width: 100%; background: #4fc3f7; color: #0f1117; border: none; padding: 12px; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+    button { width: 100%; background: #4fc3f7; color: #0f1117; border: none; padding: 12px; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
     button:hover { background: #3eaae0; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
-    .err { color: #ff6b6b; font-size: 0.85rem; margin-top: 10px; min-height: 1.2em; }
+    .err { display: none; background: #2a1010; border: 1px solid #ff6b6b; border-radius: 8px; color: #ff6b6b; font-size: 0.9rem; padding: 12px 14px; margin-top: 14px; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -34,12 +34,20 @@
   const form = document.getElementById('form');
   const errEl = document.getElementById('err');
   const btn = document.getElementById('btn');
+
+  function showError(msg) {
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Continue';
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    errEl.textContent = '';
+    errEl.style.display = 'none';
     const email = document.getElementById('email').value.trim();
     if (!email || !email.includes('@')) {
-      errEl.textContent = 'Enter a valid email.';
+      showError('Please enter a valid email address.');
       return;
     }
     btn.disabled = true;
@@ -51,13 +59,20 @@
         credentials: 'include',
         body: JSON.stringify({ email }),
       });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Failed');
+      let data = {};
+      try { data = await resp.json(); } catch (_) {}
+      if (!resp.ok) {
+        if (resp.status === 401) {
+          showError('Your session expired — please refresh the page and enter the password again.');
+        } else {
+          showError(data.error || `Something went wrong (${resp.status}). Please try again.`);
+        }
+        return;
+      }
+      btn.textContent = 'Loading…';
       window.location.href = '/';
     } catch (e) {
-      errEl.textContent = e.message;
-      btn.disabled = false;
-      btn.textContent = 'Continue';
+      showError('Connection error — please check your internet and try again.');
     }
   });
 </script>
