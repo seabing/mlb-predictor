@@ -11,6 +11,8 @@ auth + identify + admin-auth endpoints).
 """
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -133,7 +135,7 @@ async def identify(request: Request):
             return RedirectResponse(url="/?e=email", status_code=303)
         return JSONResponse({"error": "Enter a valid email"}, status_code=400)
 
-    # Register visitor
+    # Register visitor — best-effort; never block access if the DB fails.
     try:
         from app.visitors.services.store import visitor_store
         visitor_id = visitor_store.register(
@@ -142,10 +144,9 @@ async def identify(request: Request):
             ip=_client_ip(request),
         )
     except Exception as e:
-        print(f"[identify] register failed: {e}")
-        if is_form:
-            return RedirectResponse(url="/?e=save", status_code=303)
-        return JSONResponse({"error": f"Failed to save: {e}"}, status_code=500)
+        # Log the full error so it appears in Railway logs, but let the user through.
+        print(f"[identify] WARNING: visitor DB write failed ({type(e).__name__}): {e}")
+        visitor_id = str(uuid.uuid4())  # untracked fallback — cookie still grants access
 
     # Success — set cookie
     cookie_kwargs = dict(httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)
