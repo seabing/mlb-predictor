@@ -1,10 +1,11 @@
-"""Authentication: the cookie-based app password gate, the visitor email
-gate, and the separate admin password.
+"""Authentication: the cookie-based app password gate and the admin password.
 
-Three layers:
+Two layers:
   1. `auth_token` cookie — anyone who knows APP_PASSWORD gets past /
-  2. `visitor_id` cookie — every authed user must identify with an email
-  3. `admin_token` cookie — separate ADMIN_PASSWORD unlocks /admin
+  2. `admin_token` cookie — separate ADMIN_PASSWORD unlocks /admin
+
+Visitor identification (/identify) is kept as an optional best-effort
+tracking endpoint but is no longer required for access.
 
 Exports `AuthMiddleware` (mounted on the app) and `login_router` (the
 auth + identify + admin-auth endpoints).
@@ -51,23 +52,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return FileResponse("static/login.html")
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
+        # Visitor touch — best-effort, never blocks the request.
         visitor_id = request.cookies.get("visitor_id")
-        if not visitor_id:
-            if path == "/":
-                return FileResponse("static/identify.html")
-            return JSONResponse({"error": "Identify required"}, status_code=401)
-
-        # Best-effort touch of the visitor record; never block the request.
-        try:
-            from app.visitors.services.store import visitor_store
-            visitor_store.touch(
-                visitor_id,
-                path=path,
-                user_agent=request.headers.get("user-agent", ""),
-                ip=_client_ip(request),
-            )
-        except Exception as e:  # pragma: no cover
-            print(f"[visitor.touch] {e}")
+        if visitor_id:
+            try:
+                from app.visitors.services.store import visitor_store
+                visitor_store.touch(
+                    visitor_id,
+                    path=path,
+                    user_agent=request.headers.get("user-agent", ""),
+                    ip=_client_ip(request),
+                )
+            except Exception as e:  # pragma: no cover
+                print(f"[visitor.touch] {e}")
 
         return await call_next(request)
 
