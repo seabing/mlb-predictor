@@ -52,7 +52,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return FileResponse("static/login.html")
             return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
-        # Visitor touch — best-effort, never blocks the request.
+        # Visitor touch -- best-effort, never blocks the request.
         visitor_id = request.cookies.get("visitor_id")
         if visitor_id:
             try:
@@ -98,7 +98,7 @@ async def identify(request: Request):
     """Accept either a plain HTML form POST or a JSON body.
 
     Form POST (from identify.html): returns 303 redirects so the browser
-    handles cookie storage and navigation itself — no JS timing issues.
+    handles cookie storage and navigation itself -- no JS timing issues.
 
     JSON (legacy / API): returns JSON responses as before.
     """
@@ -122,7 +122,7 @@ async def identify(request: Request):
     # Auth check
     if request.cookies.get("auth_token") != settings.app_password:
         if is_form:
-            # Redirect to login — session has expired
+            # Redirect to login -- session has expired
             return RedirectResponse(url="/", status_code=303)
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
@@ -132,5 +132,40 @@ async def identify(request: Request):
             return RedirectResponse(url="/?e=email", status_code=303)
         return JSONResponse({"error": "Enter a valid email"}, status_code=400)
 
-    # Register visitor — best-effort; never block access if the DB fails.
-    tr
+    # Register visitor -- best-effort; never block access if the DB fails.
+    try:
+        from app.visitors.services.store import visitor_store
+        visitor_id = visitor_store.register(
+            email,
+            user_agent=request.headers.get("user-agent", ""),
+            ip=_client_ip(request),
+        )
+    except Exception as e:
+        print(f"[identify] WARNING: visitor DB write failed ({type(e).__name__}): {e}")
+        visitor_id = str(uuid.uuid4())  # untracked fallback -- cookie still grants access
+
+    # Success -- set cookie
+    cookie_kwargs = dict(httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)
+    if is_form:
+        response = RedirectResponse(url="/", status_code=303)
+        response.set_cookie("visitor_id", visitor_id, **cookie_kwargs)
+        return response
+    response = JSONResponse({"status": "ok"})
+    response.set_cookie("visitor_id", visitor_id, **cookie_kwargs)
+    return response
+
+
+@login_router.post("/admin/auth")
+async def admin_auth(request: Request):
+    body = await request.json()
+    if body.get("password") == settings.admin_password:
+        response = JSONResponse({"status": "ok"})
+        response.set_cookie(
+            "admin_token",
+            settings.admin_password,
+            httponly=True,
+            samesite="lax",
+            max_age=60 * 60 * 24 * 30,
+        )
+        return response
+    return JSONResponse({"error": "Wrong password"}, status_code=401)

@@ -33,7 +33,7 @@ async def _cache_warmer_loop() -> None:
     """Daily background task: cache yesterday's games so Backtest & Tune is fast."""
     from app.tuning.services.orchestration import warm_cache_for_yesterday
     INTERVAL = 24 * 60 * 60  # 24 hours
-    await asyncio.sleep(60)   # short startup delay — let the server settle
+    await asyncio.sleep(60)   # short startup delay -- let the server settle
     while True:
         try:
             await asyncio.to_thread(warm_cache_for_yesterday)
@@ -66,4 +66,34 @@ async def lifespan(app: FastAPI):
                 await t
             except asyncio.CancelledError:
                 pass
-   
+        print("[shutdown] background tasks stopped")
+
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(AuthMiddleware)
+
+# Top-level auth + admin static pages (no /api prefix)
+app.include_router(login_router)
+app.include_router(admin_pages)
+
+# Feature API routers
+app.include_router(mlb_data_router, prefix="/api")
+app.include_router(predictions_router, prefix="/api")
+app.include_router(tuning_router, prefix="/api")
+app.include_router(scheduler_router, prefix="/api")
+app.include_router(trades_router, prefix="/api")
+app.include_router(salaries_router, prefix="/api")
+app.include_router(visitors_router, prefix="/api")
+
+
+@app.get("/")
+def root():
+    return FileResponse("static/index.html")
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
