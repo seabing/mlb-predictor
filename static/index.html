@@ -1644,7 +1644,96 @@
     }, 1000);
   }
 
+
   async function btPoll() {
     try {
       const s = await fetch(`${API}/tune/status`).then(r => r.json());
-      document.getElementById('btBar').style.width = (s.progress || 
+      document.getElementById('btBar').style.width = (s.progress || 0) + '%';
+      document.getElementById('btPhaseLabel').textContent = s.phase || '';
+      document.getElementById('btPhaseDetail').textContent = s.phase_detail || '';
+      if (s.log && s.log.length) {
+        const logEl = document.getElementById('btLog');
+        logEl.textContent = s.log.join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      if (s.elapsed_seconds != null) {
+        const sec = Math.floor(s.elapsed_seconds);
+        document.getElementById('btElapsed').textContent =
+          sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}m ${sec % 60}s`;
+      }
+      if (s.status === 'done') {
+        btStopPolling();
+        document.getElementById('btRunBtn').disabled = false;
+        document.getElementById('btRunBtn').textContent = 'Run Again';
+        if (s.result) { btShowResult(s.result); if (s.result.applied) loadWeights(); }
+      } else if (s.status === 'error') {
+        btStopPolling();
+        document.getElementById('btRunBtn').disabled = false;
+        document.getElementById('btRunBtn').textContent = 'Run Again';
+        document.getElementById('btPhaseLabel').textContent = 'Error';
+        document.getElementById('btPhaseDetail').textContent = s.error || 'Unknown error';
+      }
+    } catch (e) { /* network blip — keep polling */ }
+  }
+
+  async function btRun() {
+    const btn   = document.getElementById('btRunBtn');
+    const apply = document.getElementById('btAutoApply').checked;
+    const iter  = parseInt(document.getElementById('btIter').value || '200', 10);
+    const start = document.getElementById('btStart').value || undefined;
+    const end   = document.getElementById('btEnd').value || undefined;
+
+    document.getElementById('btProgress').style.display = 'block';
+    document.getElementById('btResult').style.display = 'none';
+    document.getElementById('btResult').innerHTML = '';
+    document.getElementById('btLog').textContent = '';
+    document.getElementById('btBar').style.width = '0%';
+    document.getElementById('btPhaseLabel').textContent = 'Starting…';
+    document.getElementById('btPhaseDetail').textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+    btStartElapsed();
+
+    try {
+      const resp = await fetch(`${API}/tune/run-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date: start, end_date: end, n_iter: iter, apply }),
+      });
+      const r = await resp.json();
+      if (!resp.ok || r.error) {
+        btStopPolling();
+        btn.disabled = false;
+        btn.textContent = 'Run';
+        document.getElementById('btPhaseLabel').textContent = 'Error';
+        document.getElementById('btPhaseDetail').textContent = r.error || 'Failed to start';
+        return;
+      }
+      _btPollTimer = setInterval(btPoll, 2000);
+    } catch (e) {
+      btStopPolling();
+      btn.disabled = false;
+      btn.textContent = 'Run';
+      document.getElementById('btPhaseLabel').textContent = 'Failed to start: ' + e.message;
+    }
+  }
+
+  // Auto-resume: if a job is already running when the page loads, pick up polling
+  (async function () {
+    try {
+      const s = await fetch(`${API}/tune/status`).then(r => r.json());
+      if (s.status === 'running') {
+        document.getElementById('btRunBtn').disabled = true;
+        document.getElementById('btRunBtn').textContent = 'Running…';
+        document.getElementById('btProgress').style.display = 'block';
+        btStartElapsed();
+        _btPollTimer = setInterval(btPoll, 2000);
+      } else if (s.status === 'done' && s.result) {
+        btShowResult(s.result);
+      }
+    } catch (e) { /* server not ready yet */ }
+  })();
+
+</script>
+</body>
+</html>
