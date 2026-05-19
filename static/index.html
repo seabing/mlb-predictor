@@ -396,44 +396,52 @@
     <div id="weights-status" style="font-size:0.85rem; color:#4fc3f7; display:none; margin-bottom:24px;"></div>
 
     <div class="section">
-      <h2>Backtest &amp; Auto-Tune</h2>
+      <h2>Backtest &amp; Tune</h2>
       <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
-        Backtest the current weights against recent finalized games (defaults to the last 30 days through yesterday),
-        or run a random search to find better weights (log loss objective).
-        First run takes a few minutes to fetch lineups; subsequent runs use the local cache.
+        Runs incrementally — only fetches data for dates not already cached, so repeat
+        runs on the same window are near-instant. A background job pre-caches yesterday's
+        games each day. On completion you'll see a full before/after summary.
       </p>
-      <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
-        <label style="font-size:0.85rem;">Iterations:
-          <input id="tuneIter" type="number" value="200" min="20" max="2000" step="20"
-            style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; width:90px; margin-left:6px;">
-        </label>
-        <label style="font-size:0.85rem;">Start:
-          <input id="tuneStart" type="date"
-            style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; margin-left:6px;">
-        </label>
-        <label style="font-size:0.85rem;">End:
-          <input id="tuneEnd" type="date"
-            style="background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; margin-left:6px;">
-        </label>
-      </div>
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button class="trade-btn" onclick="runBacktest()">▶ Backtest current weights</button>
-        <button class="trade-btn" onclick="runTune(false)">🎯 Tune on date range (preview)</button>
-        <button class="trade-btn" onclick="runTune(true)">🎯 Tune on date range &amp; apply</button>
-      </div>
-      <div id="tuneStatus" style="font-size:0.85rem; color:#888; margin-top:14px;"></div>
-      <pre id="tuneOutput" style="background:#0f1117; color:#9cdcfe; padding:14px; border-radius:8px; font-size:0.8rem; margin-top:14px; max-height:300px; overflow:auto; display:none;"></pre>
 
-      <hr style="border:none; border-top:1px solid #2a2d3e; margin:24px 0;">
-      <h3 style="font-size:0.85rem; color:#4fc3f7; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.05em;">Auto-tune from your prediction history</h3>
-      <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
-        The most honest tuning signal: re-fits weights using <b>only games you actually predicted and saw the outcome of</b>.
-        Needs at least 20 graded predictions. Open the Predictions tab and let games go Final to grow the sample.
-      </p>
-      <div style="display:flex; gap:12px; flex-wrap:wrap;">
-        <button class="trade-btn" onclick="runTuneFromHistory(false)">📊 Tune from history (preview)</button>
-        <button class="trade-btn" onclick="runTuneFromHistory(true)">📊 Tune from history &amp; apply</button>
+      <!-- Controls -->
+      <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;">
+        <label style="font-size:0.85rem;">Start
+          <input id="btStart" type="date"
+            style="display:block; margin-top:4px; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px;">
+        </label>
+        <label style="font-size:0.85rem;">End
+          <input id="btEnd" type="date"
+            style="display:block; margin-top:4px; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px;">
+        </label>
+        <label style="font-size:0.85rem;">Iterations
+          <input id="btIter" type="number" value="200" min="20" max="2000" step="20"
+            style="display:block; margin-top:4px; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:6px 10px; border-radius:6px; width:90px;">
+        </label>
+        <label style="font-size:0.85rem; display:flex; align-items:center; gap:7px; padding-bottom:2px; cursor:pointer;">
+          <input id="btAutoApply" type="checkbox" style="accent-color:#4fc3f7; width:15px; height:15px;">
+          Auto-apply weights after tuning
+        </label>
       </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="btRunBtn" class="trade-btn" onclick="btRun()">▶ Run Backtest &amp; Tune</button>
+        <button class="trade-btn" onclick="btRunManualApply()" style="opacity:0.7; font-size:0.8rem;">Apply best weights now</button>
+      </div>
+
+      <!-- Progress -->
+      <div id="btProgress" style="display:none; margin-top:20px;">
+        <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:#888; margin-bottom:5px;">
+          <span id="btPhaseLabel">Starting…</span>
+          <span id="btElapsed">0s</span>
+        </div>
+        <div style="background:#12151f; border-radius:6px; height:8px; overflow:hidden; margin-bottom:8px;">
+          <div id="btBar" style="height:100%; width:0%; background:linear-gradient(90deg,#4fc3f7,#81d4fa); transition:width 0.5s ease; border-radius:6px;"></div>
+        </div>
+        <div id="btPhaseDetail" style="font-size:0.78rem; color:#555; margin-bottom:10px;"></div>
+        <pre id="btLog" style="background:#0a0c14; color:#5a7a8a; padding:10px 12px; border-radius:6px; font-size:0.74rem; max-height:180px; overflow-y:auto; margin:0; white-space:pre-wrap; word-break:break-word; line-height:1.5;"></pre>
+      </div>
+
+      <!-- Results -->
+      <div id="btResult" style="display:none; margin-top:20px;"></div>
     </div>
   </div>
 
@@ -475,10 +483,9 @@
   }
 
   function fillTuneDates() {
-    const start = document.getElementById('tuneStart');
-    const end = document.getElementById('tuneEnd');
+    const start = document.getElementById('btStart');
+    const end = document.getElementById('btEnd');
     if (!start || !end) return;
-    // Default = last 30 days through yesterday (today's games may not be final)
     const today = new Date();
     const yesterday = new Date(today.getTime() - 24*60*60*1000);
     const startDate = new Date(yesterday.getTime() - 29*24*60*60*1000);
@@ -1530,137 +1537,114 @@
     }
   }
 
-  // ----- TUNER -----
-  let _tuneStartTime = 0;
-  let _tuneTimer = null;
+  // ----- BACKTEST & TUNE (incremental, background job with polling) -----
 
-  function startTuneClock(label) {
-    const status = document.getElementById('tuneStatus');
-    _tuneStartTime = Date.now();
-    if (_tuneTimer) clearInterval(_tuneTimer);
-    _tuneTimer = setInterval(() => {
-      const secs = Math.floor((Date.now() - _tuneStartTime) / 1000);
-      status.textContent = `${label} · elapsed ${Math.floor(secs/60)}m ${secs%60}s · still working…`;
+  let _btPollTimer = null;
+  let _btElapsedTimer = null;
+  let _btStartTs = 0;
+
+  function _btFmt(v, pct = false) {
+    if (v == null) return 'n/a';
+    return pct ? (v * 100).toFixed(1) + '%' : v;
+  }
+
+  function _btDelta(delta, lowerIsBetter = false) {
+    if (delta == null) return '';
+    const improved = lowerIsBetter ? delta < 0 : delta > 0;
+    const sign = delta > 0 ? '+' : '';
+    const color = improved ? '#4caf50' : '#ef5350';
+    return `<span style="color:${color};font-size:0.85em;">${sign}${delta}</span>`;
+  }
+
+  function _groupLabel(g) {
+    return g === 'hit_weights' ? 'Hitting' : g === 'pitch_weights' ? 'Pitching' : 'Balance';
+  }
+
+  function btShowResult(r) {
+    const el = document.getElementById('btResult');
+    if (r.error) {
+      el.innerHTML = `<div style="color:#ef5350;padding:12px;background:#1a0a0a;border-radius:8px;">${r.error}</div>`;
+      el.style.display = 'block';
+      return;
+    }
+    const base = r.baseline_metrics || {};
+    const best = r.best_metrics || {};
+    const changes = r.weight_changes || [];
+
+    let changesHtml = '';
+    if (changes.length) {
+      const rows = changes.slice(0, 15).map(c => {
+        const arrow = c.delta > 0 ? '↑' : '↓';
+        const color = '#888';
+        return `<tr>
+          <td style="color:#888;padding:3px 10px 3px 0;">${_groupLabel(c.group)}</td>
+          <td style="padding:3px 10px 3px 0;font-family:monospace;">${c.key}</td>
+          <td style="padding:3px 10px 3px 0;color:#aaa;">${c.old}</td>
+          <td style="padding:3px 2px 3px 0;color:${c.delta > 0 ? '#81d4fa' : '#ef9a9a'};">${arrow} ${c.new}</td>
+          <td style="padding:3px 0;color:${c.delta > 0 ? '#81d4fa' : '#ef9a9a'};font-size:0.85em;">${c.delta > 0 ? '+' : ''}${c.delta}</td>
+        </tr>`;
+      }).join('');
+      changesHtml = `
+        <div style="margin-top:16px;">
+          <div style="font-size:0.75rem;color:#4fc3f7;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Weight Changes</div>
+          <table style="font-size:0.82rem;border-collapse:collapse;width:100%;">${rows}</table>
+          ${changes.length > 15 ? `<div style="font-size:0.75rem;color:#555;margin-top:6px;">…and ${changes.length - 15} more</div>` : ''}
+        </div>`;
+    } else {
+      changesHtml = `<div style="color:#555;font-size:0.82rem;margin-top:12px;">No significant weight changes (all deltas &lt; 0.005)</div>`;
+    }
+
+    const applied = r.applied
+      ? `<span style="color:#4caf50;">✓ Weights applied to model</span>`
+      : `<span style="color:#888;">Weights not applied</span>`;
+
+    el.innerHTML = `
+      <div style="background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:18px;">
+        <div style="font-size:0.75rem;color:#4fc3f7;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">
+          Results · ${r.games_evaluated} games · ${r.start_date} → ${r.end_date}
+          ${r.new_dates_fetched > 0 ? `<span style="color:#666;"> · ${r.new_dates_fetched} new dates fetched</span>` : ''}
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+          <div style="background:#12151f;border-radius:8px;padding:12px;">
+            <div style="font-size:0.72rem;color:#555;margin-bottom:4px;">LOG LOSS</div>
+            <div style="font-size:1.1rem;color:#e0e0e0;">${_btFmt(base.log_loss)} → <b style="color:#4fc3f7;">${_btFmt(best.log_loss)}</b></div>
+            <div style="margin-top:4px;">${_btDelta(r.ll_delta, true)}</div>
+          </div>
+          <div style="background:#12151f;border-radius:8px;padding:12px;">
+            <div style="font-size:0.72rem;color:#555;margin-bottom:4px;">ACCURACY</div>
+            <div style="font-size:1.1rem;color:#e0e0e0;">${_btFmt(base.accuracy, true)} → <b style="color:#4fc3f7;">${_btFmt(best.accuracy, true)}</b></div>
+            <div style="margin-top:4px;">${_btDelta(r.acc_delta, false)}</div>
+          </div>
+          <div style="background:#12151f;border-radius:8px;padding:12px;">
+            <div style="font-size:0.72rem;color:#555;margin-bottom:4px;">BRIER</div>
+            <div style="font-size:1.1rem;color:#e0e0e0;">${_btFmt(base.brier)} → <b style="color:#4fc3f7;">${_btFmt(best.brier)}</b></div>
+          </div>
+        </div>
+
+        ${changesHtml}
+
+        <div style="margin-top:14px;font-size:0.82rem;">${applied}</div>
+      </div>`;
+    el.style.display = 'block';
+  }
+
+  function btStopPolling() {
+    if (_btPollTimer) { clearInterval(_btPollTimer); _btPollTimer = null; }
+    if (_btElapsedTimer) { clearInterval(_btElapsedTimer); _btElapsedTimer = null; }
+  }
+
+  function btStartElapsed() {
+    _btStartTs = Date.now();
+    const el = document.getElementById('btElapsed');
+    if (_btElapsedTimer) clearInterval(_btElapsedTimer);
+    _btElapsedTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - _btStartTs) / 1000);
+      el.textContent = s < 60 ? `${s}s` : `${Math.floor(s/60)}m ${s%60}s`;
     }, 1000);
-    status.textContent = `${label} · starting…`;
-  }
-  function stopTuneClock() {
-    if (_tuneTimer) { clearInterval(_tuneTimer); _tuneTimer = null; }
   }
 
-  async function runBacktest() {
-    const status = document.getElementById('tuneStatus');
-    const out = document.getElementById('tuneOutput');
-    out.style.display = 'none';
-    startTuneClock('Backtest running (first run fetches lineups, can take 5+ min)');
+  async function btPoll() {
     try {
-      const body = {
-        start_date: document.getElementById('tuneStart').value || undefined,
-        end_date: document.getElementById('tuneEnd').value || undefined,
-      };
-      const r = await fetch(`${API}/backtest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then(r => r.json());
-      stopTuneClock();
-      if (r.error) {
-        status.textContent = 'Backtest failed: ' + r.error;
-        return;
-      }
-      const acc = r.metrics?.accuracy != null ? (r.metrics.accuracy * 100).toFixed(1) + '%' : 'n/a';
-      status.textContent = `Done · ${r.metrics?.n ?? 0} games · log loss ${r.metrics?.log_loss} · acc ${acc} · brier ${r.metrics?.brier}`;
-      out.textContent = JSON.stringify(r, null, 2);
-      out.style.display = 'block';
-    } catch (e) {
-      stopTuneClock();
-      status.textContent = 'Backtest failed: ' + e.message;
-    }
-  }
-
-  async function runTuneFromHistory(apply) {
-    const status = document.getElementById('tuneStatus');
-    const out = document.getElementById('tuneOutput');
-    out.style.display = 'none';
-    startTuneClock('Tuning from your graded prediction history');
-    try {
-      const body = { n_iter: 200, apply: !!apply };
-      const r = await fetch(`${API}/tune-from-history`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then(r => r.json());
-      stopTuneClock();
-      if (r.error) {
-        status.textContent = r.error;
-        return;
-      }
-      const base = r.baseline_metrics || {};
-      const best = r.best_metrics || {};
-      const delta = (base.log_loss != null && best.log_loss != null)
-        ? (best.log_loss - base.log_loss).toFixed(4) : '?';
-      status.innerHTML =
-        `Done from <b>${r.games_evaluated}</b> graded games · ` +
-        `baseline log loss <b>${base.log_loss}</b> (acc ${(base.accuracy*100).toFixed(1)}%) → ` +
-        `best <b style="color:#4fc3f7">${best.log_loss}</b> (acc ${(best.accuracy*100).toFixed(1)}%) · ` +
-        `Δ ${delta} ${apply ? '· <b>applied</b>' : '· not applied'}`;
-      out.textContent = JSON.stringify({
-        baseline_metrics: base, best_metrics: best,
-        best_weights: r.best_weights, applied: r.applied || false,
-        games_evaluated: r.games_evaluated,
-      }, null, 2);
-      out.style.display = 'block';
-      if (apply) await loadWeights();
-    } catch (e) {
-      stopTuneClock();
-      status.textContent = 'Tune from history failed: ' + e.message;
-    }
-  }
-
-  async function runTune(apply) {
-    const status = document.getElementById('tuneStatus');
-    const out = document.getElementById('tuneOutput');
-    const iter = parseInt(document.getElementById('tuneIter').value || '200', 10);
-    out.style.display = 'none';
-    startTuneClock(`Tuning on date range, ${iter} iterations`);
-    try {
-      const body = {
-        n_iter: iter,
-        apply: !!apply,
-        start_date: document.getElementById('tuneStart').value || undefined,
-        end_date: document.getElementById('tuneEnd').value || undefined,
-      };
-      const r = await fetch(`${API}/tune`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then(r => r.json());
-      stopTuneClock();
-      if (r.error) { status.textContent = r.error; return; }
-      const base = r.baseline_metrics || {};
-      const best = r.best_metrics || {};
-      const delta = (base.log_loss != null && best.log_loss != null)
-        ? (best.log_loss - base.log_loss).toFixed(4) : '?';
-      status.innerHTML =
-        `Done · games ${r.games_evaluated} · ` +
-        `baseline log loss <b>${base.log_loss}</b> (acc ${(base.accuracy*100).toFixed(1)}%) → ` +
-        `best <b style="color:#4fc3f7">${best.log_loss}</b> (acc ${(best.accuracy*100).toFixed(1)}%) · ` +
-        `Δ ${delta} ${apply ? '· <b>applied</b>' : '· not applied'}`;
-      const display = {
-        baseline_metrics: base,
-        best_metrics: best,
-        best_weights: r.best_weights,
-        applied: r.applied || false,
-      };
-      out.textContent = JSON.stringify(display, null, 2);
-      out.style.display = 'block';
-      if (apply) await loadWeights();
-    } catch (e) {
-      stopTuneClock();
-      status.textContent = 'Tune failed: ' + e.message;
-    }
-  }
-</script>
-
-</body>
-</html>
+      const s = await fetch(`${API}/tune/status`).then(r => r.json());
+      document.getElementById('btBar').style.width = (s.progress || 
