@@ -74,6 +74,7 @@
     <button onclick="showPage('predictions', this)">Predictions</button>
     <button onclick="showPage('trades', this)">Trade Simulator</button>
     <button onclick="showPage('settings', this)">Model Settings</button>
+    <button onclick="showPage('jonah', this)">Jonah ✨</button>
   </nav>
 </header>
 
@@ -462,6 +463,34 @@
     </div>
   </div>
 
+  <!-- JONAH PAGE (Phase 2 — front office sandbox) -->
+  <div class="page" id="page-jonah">
+    <div class="section">
+      <h2>Jonah ✨ — Front Office Sandbox</h2>
+      <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
+        Describe a roster move in plain English and see its impact on the team's projected
+        win probability. Win probability is measured against a league-average opponent, so
+        the before/after change reflects how much the move strengthens or weakens the roster.
+      </p>
+      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px;">
+        <label style="font-size:0.85rem;">Team
+          <select id="jonahTeam"
+            style="display:block; margin-top:4px; min-width:220px; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:8px 10px; border-radius:6px;">
+            <option value="">Select a team…</option>
+          </select>
+        </label>
+      </div>
+      <textarea id="jonahMove" rows="2"
+        placeholder="e.g. trade for a mid-rotation starter and drop $15M in payroll"
+        style="width:100%; box-sizing:border-box; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:10px 12px; border-radius:6px; font-size:0.9rem; resize:vertical;"></textarea>
+      <div style="margin-top:10px;">
+        <button id="jonahBtn" class="trade-btn" onclick="runJonahMove()">Run move ✨</button>
+      </div>
+      <div id="jonahStatus" style="font-size:0.85rem; color:#888; display:none; margin-top:12px;"></div>
+      <div id="jonahResult" style="display:none; margin-top:20px;"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -497,6 +526,102 @@
     if (name === 'trades') loadTradesFromServer();
     if (name === 'settings') { loadWeights(); fillTuneDates(); }
     if (name === 'predictions') loadPredictions();
+    if (name === 'jonah') initJonah();
+  }
+
+  // ----- JONAH (front office sandbox) -----
+  let jonahReady = false;
+  function initJonah() {
+    if (jonahReady) return;
+    const sel = document.getElementById('jonahTeam');
+    Object.keys(teamNames).sort().forEach(code => {
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = teamNames[code];
+      sel.appendChild(opt);
+    });
+    jonahReady = true;
+  }
+
+  async function runJonahMove() {
+    const team = document.getElementById('jonahTeam').value;
+    const message = document.getElementById('jonahMove').value.trim();
+    const btn = document.getElementById('jonahBtn');
+    const status = document.getElementById('jonahStatus');
+    const result = document.getElementById('jonahResult');
+
+    if (!team) { status.style.display = 'block'; status.style.color = '#ff6b6b'; status.textContent = 'Pick a team first.'; return; }
+    if (!message) { status.style.display = 'block'; status.style.color = '#ff6b6b'; status.textContent = 'Describe the move you want to explore.'; return; }
+
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = 'Working…';
+    result.style.display = 'none';
+    status.style.display = 'block';
+    status.style.color = '#888';
+    status.textContent = 'Interpreting the move, resolving players, and rerunning the model… (this can take a moment)';
+
+    try {
+      const resp = await fetch(`${API}/jonah/roster-move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team, message })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        status.style.color = '#ff6b6b';
+        status.textContent = '⚠️ ' + (data.error || 'Something went wrong.');
+        return;
+      }
+      status.style.display = 'none';
+      renderJonahResult(data);
+    } catch (e) {
+      status.style.color = '#ff6b6b';
+      status.textContent = '⚠️ Request failed: ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
+
+  function renderJonahResult(d) {
+    const result = document.getElementById('jonahResult');
+    const up = d.delta > 0, flat = d.delta === 0;
+    const color = flat ? '#888' : (up ? '#4caf50' : '#ff6b6b');
+    const arrow = flat ? '→' : (up ? '▲' : '▼');
+    const sign = d.delta > 0 ? '+' : '';
+    const payroll = (d.payroll_change_millions === null || d.payroll_change_millions === undefined)
+      ? '' :
+      `<div style="font-size:0.85rem; color:#bbb; margin-top:8px;">Estimated payroll change: <strong>${d.payroll_change_millions > 0 ? '+' : ''}$${d.payroll_change_millions}M</strong></div>`;
+
+    const added = (d.applied.added || []);
+    const dropped = (d.applied.dropped || []);
+    const notFound = [].concat(d.applied.drop_not_found || [], d.applied.unresolved_acquisitions || []);
+    const listLine = (lbl, arr, c) => arr.length
+      ? `<div style="font-size:0.84rem; color:${c}; margin-top:4px;">${lbl}: ${arr.join(', ')}</div>` : '';
+
+    result.innerHTML = `
+      <div class="section" style="margin:0;">
+        <div style="display:flex; gap:30px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+          <div><div style="font-size:0.75rem; color:#888;">BEFORE</div>
+            <div style="font-size:1.6rem; font-weight:700; color:#e0e0e0;">${d.before_win_pct}%</div></div>
+          <div style="font-size:1.4rem; color:#666;">→</div>
+          <div><div style="font-size:0.75rem; color:#888;">AFTER</div>
+            <div style="font-size:1.6rem; font-weight:700; color:#e0e0e0;">${d.after_win_pct}%</div></div>
+          <div style="margin-left:auto; text-align:right;">
+            <div style="font-size:0.75rem; color:#888;">CHANGE</div>
+            <div style="font-size:1.5rem; font-weight:700; color:${color};">${arrow} ${sign}${d.delta}%</div></div>
+        </div>
+        <div style="font-size:0.92rem; color:#ddd; line-height:1.55;">${d.summary || ''}</div>
+        ${payroll}
+        ${listLine('Acquired', added, '#4caf50')}
+        ${listLine('Removed', dropped, '#ff8a65')}
+        ${listLine('Could not resolve', notFound, '#ffb347')}
+        <div style="font-size:0.72rem; color:#666; margin-top:14px;">
+          Win probability is measured vs a league-average opponent — the change is the meaningful figure.
+        </div>
+      </div>`;
+    result.style.display = 'block';
   }
 
   function fillTuneDates() {

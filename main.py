@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.auth import AuthMiddleware, login_router
 from app.core.config import settings
+from app.jonah.routes import router as jonah_router
 from app.mlb.routes import router as mlb_data_router
 from app.predictions.routes import router as predictions_router
 from app.salaries.routes import router as salaries_router
@@ -84,6 +85,7 @@ app.include_router(scheduler_router, prefix="/api")
 app.include_router(trades_router, prefix="/api")
 app.include_router(salaries_router, prefix="/api")
 app.include_router(visitors_router, prefix="/api")
+app.include_router(jonah_router, prefix="/api")
 
 
 @app.get("/")
