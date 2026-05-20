@@ -389,6 +389,23 @@
       <p style="font-size:0.85rem; color:#888; margin-bottom:20px;">Control how offense, pitching, bullpen, recent form, and park factors are weighted.</p>
       <div id="balance-sliders"></div>
     </div>
+
+    <div class="section">
+      <h2>Tune with Plain English ✨</h2>
+      <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
+        Describe what you want the model to focus on and Claude will adjust the sliders above.
+        Nothing is saved until you click <strong>Save Weights</strong> — review the changes first.
+      </p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:stretch;">
+        <input id="nlInput" type="text"
+          placeholder="e.g. focus more on pitching, especially strikeouts"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();nlTune();}"
+          style="flex:1; min-width:240px; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:10px 12px; border-radius:6px; font-size:0.9rem;">
+        <button id="nlBtn" class="trade-btn" onclick="nlTune()">Apply ✨</button>
+      </div>
+      <div id="nlStatus" style="font-size:0.85rem; color:#4fc3f7; display:none; margin-top:12px; line-height:1.5;"></div>
+    </div>
+
     <div style="display:flex; gap:12px; margin-bottom:24px;">
       <button class="trade-btn" onclick="saveWeights()">💾 Save Weights</button>
       <button class="trade-btn-danger" onclick="resetWeights()">↺ Reset to Defaults</button>
@@ -1057,6 +1074,77 @@
     status.style.display = 'block';
     status.textContent = '✅ Weights reset to defaults!';
     setTimeout(() => status.style.display = 'none', 3000);
+  }
+
+  // Read the live slider values into the same {hit_weights, pitch_weights, balance} shape.
+  function readSliderValues() {
+    const getGroup = (weights) => {
+      const result = {};
+      Object.keys(weights).forEach(key => {
+        const slider = document.getElementById(`slider-${key}`);
+        if (slider) result[key] = parseFloat(slider.value);
+      });
+      return result;
+    };
+    return {
+      hit_weights: getGroup(currentWeights.hit_weights),
+      pitch_weights: getGroup(currentWeights.pitch_weights),
+      balance: getGroup(currentWeights.balance)
+    };
+  }
+
+  // Push a {hit_weights, pitch_weights, balance} object onto the sliders + readouts.
+  function applyWeightsToSliders(weights) {
+    ['hit_weights', 'pitch_weights', 'balance'].forEach(group => {
+      Object.entries(weights[group] || {}).forEach(([key, val]) => {
+        const slider = document.getElementById(`slider-${key}`);
+        const readout = document.getElementById(`val-${key}`);
+        if (slider) slider.value = val;
+        if (readout) readout.textContent = parseFloat(val).toFixed(2);
+      });
+    });
+    // Keep currentWeights in sync so a subsequent Save reads the new values.
+    currentWeights = weights;
+  }
+
+  async function nlTune() {
+    const input = document.getElementById('nlInput');
+    const btn = document.getElementById('nlBtn');
+    const status = document.getElementById('nlStatus');
+    const message = (input.value || '').trim();
+    if (!message) { input.focus(); return; }
+
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = 'Thinking…';
+    status.style.display = 'block';
+    status.style.color = '#888';
+    status.textContent = 'Claude is interpreting your request…';
+
+    try {
+      const resp = await fetch(`${API}/tune/nl`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, current_weights: readSliderValues() })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        status.style.color = '#ff6b6b';
+        status.textContent = '⚠️ ' + (data.error || 'Something went wrong.');
+        return;
+      }
+      applyWeightsToSliders(data.weights);
+      status.style.color = '#4fc3f7';
+      status.innerHTML = '✨ ' + (data.summary || 'Sliders updated.') +
+        '<br><span style="color:#888;">Review the sliders, then click 💾 Save Weights to apply.</span>';
+      input.value = '';
+    } catch (e) {
+      status.style.color = '#ff6b6b';
+      status.textContent = '⚠️ Request failed: ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   }
 
   loadTradesFromServer();

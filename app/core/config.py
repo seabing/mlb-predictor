@@ -28,6 +28,10 @@ class Settings:
     auto_predict_interval_seconds: int
     auto_predict_window_minutes: int
 
+    # ---- Anthropic / Claude API ----
+    anthropic_api_key: str
+    anthropic_model: str
+
     # ---- data paths ----
     data_dir: str
     predictions_db_path: str
@@ -37,6 +41,11 @@ class Settings:
     salaries_cache_path: str
     tuning_history_path: str
 
+    @property
+    def has_anthropic_key(self) -> bool:
+        """True when an Anthropic API key is configured."""
+        return bool(self.anthropic_api_key)
+
     @classmethod
     def from_env(cls) -> "Settings":
         app_pw = os.getenv("APP_PASSWORD", "changeme")
@@ -45,6 +54,8 @@ class Settings:
         return cls(
             app_password=app_pw,
             admin_password=admin_pw,
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
+            anthropic_model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6").strip(),
             auto_predict_enabled=_bool_env("AUTO_PREDICT_ENABLED", True),
             auto_predict_interval_seconds=int(os.getenv("AUTO_PREDICT_INTERVAL_SECONDS", 2 * 60 * 60)),
             auto_predict_window_minutes=int(os.getenv("AUTO_PREDICT_WINDOW_MIN", 150)),

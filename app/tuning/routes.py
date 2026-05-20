@@ -1,5 +1,5 @@
-"""HTTP routes for tuning: backtest, tune, tune-from-history, and the new
-combined run-all endpoint with a polling /status endpoint.
+"""HTTP routes for tuning: backtest, tune, tune-from-history, the combined
+run-all endpoint with a polling /status endpoint, and natural-language tuning.
 """
 from __future__ import annotations
 
@@ -8,10 +8,40 @@ import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.core.llm import LLMError
+from app.tuning.services import nl_tuner as _nl
 from app.tuning.services import orchestration as _orch
 from app.tuning.services.job_state import job_state
 
 router = APIRouter()
+
+
+# ------------------------------------------------------------------ #
+# Natural-language model tuning (Item 6)                               #
+# ------------------------------------------------------------------ #
+
+@router.post("/tune/nl")
+async def tune_nl(request: Request):
+    """Interpret a plain-English tuning request and return updated weights.
+
+    Request body: {"message": "<plain English>", "current_weights": {...}}
+    Response:     {"weights": {...}, "summary": "..."}
+
+    Values are validated and clamped to the slider ranges. The caller decides
+    whether/when to persist them via the existing POST /api/weights.
+    """
+    payload = await request.json() if (await request.body()) else {}
+    message = payload.get("message", "")
+    current_weights = payload.get("current_weights")
+
+    try:
+        result = await asyncio.to_thread(_nl.nl_tune, message, current_weights)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except LLMError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+    return result
 
 
 # ------------------------------------------------------------------ #
