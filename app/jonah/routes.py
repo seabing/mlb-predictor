@@ -20,7 +20,9 @@ from app.jonah.services import nl_moves as _nl
 from app.jonah.services import player_resolver as _resolver
 from app.jonah.services import roster_ops as _ops
 from app.jonah.services import team_rating as _rating
+from app.jonah.services import trade_sim as _trade
 from app.mlb.client import client as mlb_client
+from app.salaries.services.spotrac import spotrac
 
 router = APIRouter()
 
@@ -35,6 +37,52 @@ async def team_rating(code: str):
         _rating.rate_team, roster_data["roster"], roster_data.get("team_id", 0)
     )
     return {"team": roster_data["team"], "rating": rating}
+
+
+@router.get("/jonah/roster-with-salaries/{code}")
+async def roster_with_salaries(code: str):
+    """Roster list enriched with salary/contract data — feeds the trade builder."""
+    roster_data = await asyncio.to_thread(mlb_client.get_roster, code)
+    if "error" in roster_data:
+        return JSONResponse({"error": roster_data["error"]}, status_code=404)
+    enriched = await asyncio.to_thread(
+        spotrac.enrich_roster, roster_data["team"], roster_data["roster"]
+    )
+    players = [
+        {
+            "id": p.get("id"),
+            "name": p.get("name"),
+            "position": p.get("position"),
+            "position_type": p.get("position_type"),
+            "status": p.get("status"),
+            "salary": p.get("salary"),
+            "years_left": p.get("years_left"),
+        }
+        for p in enriched
+    ]
+    return {"team": roster_data["team"], "players": players}
+
+
+@router.post("/jonah/trade-sim")
+async def trade_sim(request: Request):
+    """Simulate a two-team trade; return win-probability + salary impact for both."""
+    payload = await request.json() if (await request.body()) else {}
+    team_a = (payload.get("team_a") or "").strip()
+    team_b = (payload.get("team_b") or "").strip()
+    a_sends = [int(x) for x in (payload.get("team_a_sends") or [])]
+    b_sends = [int(x) for x in (payload.get("team_b_sends") or [])]
+
+    if not team_a or not team_b:
+        return JSONResponse({"error": "Both teams are required."}, status_code=400)
+    if team_a.upper() == team_b.upper():
+        return JSONResponse({"error": "Pick two different teams."}, status_code=400)
+
+    result = await asyncio.to_thread(
+        _trade.simulate_trade, team_a, a_sends, team_b, b_sends
+    )
+    if "error" in result:
+        return JSONResponse({"error": result["error"]}, status_code=400)
+    return result
 
 
 @router.post("/jonah/roster-move")

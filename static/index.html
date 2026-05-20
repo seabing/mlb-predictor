@@ -465,29 +465,75 @@
 
   <!-- JONAH PAGE (Phase 2 — front office sandbox) -->
   <div class="page" id="page-jonah">
-    <div class="section">
-      <h2>Jonah ✨ — Front Office Sandbox</h2>
-      <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
-        Describe a roster move in plain English and see its impact on the team's projected
-        win probability. Win probability is measured against a league-average opponent, so
-        the before/after change reflects how much the move strengthens or weakens the roster.
-      </p>
-      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px;">
-        <label style="font-size:0.85rem;">Team
-          <select id="jonahTeam"
-            style="display:block; margin-top:4px; min-width:220px; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:8px 10px; border-radius:6px;">
-            <option value="">Select a team…</option>
-          </select>
-        </label>
+    <!-- Jonah sub-navigation -->
+    <div style="display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap;">
+      <button id="jsub-move" class="trade-btn" onclick="showJonahSub('move', this)">Roster Move</button>
+      <button id="jsub-trade" class="trade-btn" style="opacity:0.6;" onclick="showJonahSub('trade', this)">Trade Simulator</button>
+    </div>
+
+    <!-- SUB-VIEW: Roster Move (Feature 1) -->
+    <div class="jonah-sub" id="jonah-move">
+      <div class="section">
+        <h2>Roster Move ✨</h2>
+        <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
+          Describe a roster move in plain English and see its impact on the team's projected
+          win probability. Win probability is measured against a league-average opponent, so
+          the before/after change reflects how much the move strengthens or weakens the roster.
+        </p>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px;">
+          <label style="font-size:0.85rem;">Team
+            <select id="jonahTeam"
+              style="display:block; margin-top:4px; min-width:220px; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:8px 10px; border-radius:6px;">
+              <option value="">Select a team…</option>
+            </select>
+          </label>
+        </div>
+        <textarea id="jonahMove" rows="2"
+          placeholder="e.g. trade for a mid-rotation starter and drop $15M in payroll"
+          style="width:100%; box-sizing:border-box; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:10px 12px; border-radius:6px; font-size:0.9rem; resize:vertical;"></textarea>
+        <div style="margin-top:10px;">
+          <button id="jonahBtn" class="trade-btn" onclick="runJonahMove()">Run move ✨</button>
+        </div>
+        <div id="jonahStatus" style="font-size:0.85rem; color:#888; display:none; margin-top:12px;"></div>
+        <div id="jonahResult" style="display:none; margin-top:20px;"></div>
       </div>
-      <textarea id="jonahMove" rows="2"
-        placeholder="e.g. trade for a mid-rotation starter and drop $15M in payroll"
-        style="width:100%; box-sizing:border-box; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:10px 12px; border-radius:6px; font-size:0.9rem; resize:vertical;"></textarea>
-      <div style="margin-top:10px;">
-        <button id="jonahBtn" class="trade-btn" onclick="runJonahMove()">Run move ✨</button>
+    </div>
+
+    <!-- SUB-VIEW: Trade Simulator (Feature 2) -->
+    <div class="jonah-sub" id="jonah-trade" style="display:none;">
+      <div class="section">
+        <h2>Trade Simulator</h2>
+        <p style="font-size:0.85rem; color:#888; margin-bottom:16px;">
+          Pick two teams, check off the players each side sends, and see how both teams' win
+          probabilities shift — plus the salary and contract impact, and a model comparison of
+          the players exchanged. (CBA / luxury-tax checks arrive with Feature 7.)
+        </p>
+        <div style="display:flex; gap:20px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:260px;">
+            <select id="tradeTeamA" onchange="loadTradeRoster('A')"
+              style="width:100%; box-sizing:border-box; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:8px 10px; border-radius:6px; margin-bottom:10px;">
+              <option value="">Team A — select…</option>
+            </select>
+            <div id="tradeListA" style="max-height:300px; overflow-y:auto; background:#12151f; border:1px solid #2a2d3e; border-radius:6px; padding:8px;">
+              <div style="color:#666; font-size:0.82rem; padding:8px;">Select a team to load its roster.</div>
+            </div>
+          </div>
+          <div style="flex:1; min-width:260px;">
+            <select id="tradeTeamB" onchange="loadTradeRoster('B')"
+              style="width:100%; box-sizing:border-box; background:#2a2d3e; color:#e0e0e0; border:1px solid #3a3d4e; padding:8px 10px; border-radius:6px; margin-bottom:10px;">
+              <option value="">Team B — select…</option>
+            </select>
+            <div id="tradeListB" style="max-height:300px; overflow-y:auto; background:#12151f; border:1px solid #2a2d3e; border-radius:6px; padding:8px;">
+              <div style="color:#666; font-size:0.82rem; padding:8px;">Select a team to load its roster.</div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <button id="tradeBtn" class="trade-btn" onclick="runTradeSim()">Simulate trade</button>
+        </div>
+        <div id="tradeStatus" style="font-size:0.85rem; color:#888; display:none; margin-top:12px;"></div>
+        <div id="tradeResult" style="display:none; margin-top:20px;"></div>
       </div>
-      <div id="jonahStatus" style="font-size:0.85rem; color:#888; display:none; margin-top:12px;"></div>
-      <div id="jonahResult" style="display:none; margin-top:20px;"></div>
     </div>
   </div>
 
@@ -533,14 +579,25 @@
   let jonahReady = false;
   function initJonah() {
     if (jonahReady) return;
-    const sel = document.getElementById('jonahTeam');
-    Object.keys(teamNames).sort().forEach(code => {
-      const opt = document.createElement('option');
-      opt.value = code;
-      opt.textContent = teamNames[code];
-      sel.appendChild(opt);
+    const codes = Object.keys(teamNames).sort();
+    ['jonahTeam', 'tradeTeamA', 'tradeTeamB'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      codes.forEach(code => {
+        const opt = document.createElement('option');
+        opt.value = code;
+        opt.textContent = teamNames[code];
+        sel.appendChild(opt);
+      });
     });
     jonahReady = true;
+  }
+
+  function showJonahSub(sub, btn) {
+    document.querySelectorAll('.jonah-sub').forEach(s => s.style.display = 'none');
+    document.getElementById('jonah-' + sub).style.display = 'block';
+    ['jsub-move', 'jsub-trade'].forEach(id => document.getElementById(id).style.opacity = '0.6');
+    if (btn) btn.style.opacity = '1';
   }
 
   async function runJonahMove() {
@@ -621,6 +678,110 @@
           Win probability is measured vs a league-average opponent — the change is the meaningful figure.
         </div>
       </div>`;
+    result.style.display = 'block';
+  }
+
+  // ----- JONAH: Trade Simulator (Feature 2) -----
+  function _money(raw) {
+    if (raw === null || raw === undefined || raw === '') return '—';
+    const m = Number(raw) / 1_000_000;
+    return isNaN(m) ? '—' : `$${m.toFixed(1)}M`;
+  }
+
+  async function loadTradeRoster(side) {
+    const code = document.getElementById('tradeTeam' + side).value;
+    const list = document.getElementById('tradeList' + side);
+    if (!code) {
+      list.innerHTML = '<div style="color:#666; font-size:0.82rem; padding:8px;">Select a team to load its roster.</div>';
+      return;
+    }
+    list.innerHTML = '<div style="color:#888; font-size:0.82rem; padding:8px;">Loading roster…</div>';
+    try {
+      const resp = await fetch(`${API}/jonah/roster-with-salaries/${code}`);
+      const data = await resp.json();
+      if (!resp.ok) { list.innerHTML = `<div style="color:#ff6b6b; padding:8px;">${data.error || 'Failed to load.'}</div>`; return; }
+      list.innerHTML = (data.players || []).map(p => `
+        <label style="display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:4px; cursor:pointer; font-size:0.83rem;">
+          <input type="checkbox" value="${p.id}" style="accent-color:#4fc3f7;">
+          <span style="flex:1; color:#ddd;">${p.name} <span style="color:#777;">(${p.position || '?'})</span></span>
+          <span style="color:#888;">${_money(p.salary)}${p.years_left ? ' · ' + p.years_left + 'y' : ''}</span>
+        </label>`).join('') || '<div style="color:#666; padding:8px;">No players found.</div>';
+    } catch (e) {
+      list.innerHTML = `<div style="color:#ff6b6b; padding:8px;">Request failed: ${e.message}</div>`;
+    }
+  }
+
+  function _checkedIds(side) {
+    return [...document.querySelectorAll(`#tradeList${side} input:checked`)].map(c => parseInt(c.value));
+  }
+
+  async function runTradeSim() {
+    const teamA = document.getElementById('tradeTeamA').value;
+    const teamB = document.getElementById('tradeTeamB').value;
+    const btn = document.getElementById('tradeBtn');
+    const status = document.getElementById('tradeStatus');
+    const result = document.getElementById('tradeResult');
+
+    const err = (msg) => { status.style.display = 'block'; status.style.color = '#ff6b6b'; status.textContent = msg; };
+    if (!teamA || !teamB) return err('Pick both teams.');
+    if (teamA === teamB) return err('Pick two different teams.');
+    const aSends = _checkedIds('A'), bSends = _checkedIds('B');
+    if (!aSends.length && !bSends.length) return err('Check at least one player to trade.');
+
+    btn.disabled = true; const label = btn.textContent; btn.textContent = 'Simulating…';
+    result.style.display = 'none';
+    status.style.display = 'block'; status.style.color = '#888';
+    status.textContent = 'Rating both rosters before and after the trade… (this can take a moment)';
+
+    try {
+      const resp = await fetch(`${API}/jonah/trade-sim`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team_a: teamA, team_a_sends: aSends, team_b: teamB, team_b_sends: bSends })
+      });
+      const data = await resp.json();
+      if (!resp.ok) { err('⚠️ ' + (data.error || 'Something went wrong.')); return; }
+      status.style.display = 'none';
+      renderTradeResult(data);
+    } catch (e) {
+      err('⚠️ Request failed: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = label;
+    }
+  }
+
+  function _teamCard(t) {
+    const up = t.delta > 0, flat = t.delta === 0;
+    const color = flat ? '#888' : (up ? '#4caf50' : '#ff6b6b');
+    const arrow = flat ? '→' : (up ? '▲' : '▼');
+    const sign = t.delta > 0 ? '+' : '';
+    const net = t.net_salary_change_millions;
+    const netColor = net > 0 ? '#ff8a65' : (net < 0 ? '#4caf50' : '#888');
+    const pcard = (p) => `
+      <div style="display:flex; justify-content:space-between; gap:8px; font-size:0.82rem; padding:3px 0; border-bottom:1px solid #1c1f2e;">
+        <span style="color:#ddd;">${p.name} <span style="color:#777;">(${p.position || '?'})</span></span>
+        <span style="color:#888;">score ${p.model_score ?? '—'} · ${_money(p.salary)}${p.years_left ? ' · ' + p.years_left + 'y' : ''}</span>
+      </div>`;
+    const block = (lbl, arr) => arr.length
+      ? `<div style="font-size:0.74rem; color:#777; margin-top:8px;">${lbl}</div>${arr.map(pcard).join('')}` : '';
+    return `
+      <div class="section" style="flex:1; min-width:280px; margin:0;">
+        <div style="font-weight:700; color:#e0e0e0; margin-bottom:8px;">${teamNames[t.team] || t.team}</div>
+        <div style="display:flex; gap:16px; align-items:center; margin-bottom:6px;">
+          <div><span style="color:#888; font-size:0.75rem;">WIN%</span>
+            <div style="font-size:1.2rem; color:#e0e0e0;">${t.before_win_pct}% → ${t.after_win_pct}%</div></div>
+          <div style="margin-left:auto; color:${color}; font-weight:700; font-size:1.2rem;">${arrow} ${sign}${t.delta}%</div>
+        </div>
+        <div style="font-size:0.82rem; color:#bbb;">Salary: out ${t.salary_out_millions}M · in ${t.salary_in_millions}M ·
+          <span style="color:${netColor};">net ${net > 0 ? '+' : ''}${net}M</span></div>
+        ${block('Sends', t.sends)}
+        ${block('Receives', t.receives)}
+      </div>`;
+  }
+
+  function renderTradeResult(d) {
+    const result = document.getElementById('tradeResult');
+    result.innerHTML = `<div style="display:flex; gap:18px; flex-wrap:wrap;">${_teamCard(d.team_a)}${_teamCard(d.team_b)}</div>
+      <div style="font-size:0.72rem; color:#666; margin-top:14px;">Win probability is measured vs a league-average opponent — the change is the meaningful figure. Salary/contract data via Spotrac.</div>`;
     result.style.display = 'block';
   }
 

@@ -61,10 +61,42 @@ def _score_pitching_line(blended: dict, pitch_weights: dict) -> float:
     )
 
 
-# ---- per-player scoring (does I/O via stats_service) ----
+# ---- per-player blended-stats cache (avoids refetching the same player) ----
+# Keyed by player_id. The blended stat line is what the slow API call produces;
+# scoring it against the weights is cheap, so we cache the blend and re-score
+# each time. Cleared when stats might be stale via clear_cache().
+_HIT_BLEND_CACHE: dict[int, dict | None] = {}
+_PITCH_BLEND_CACHE: dict[int, tuple | None] = {}
+
+
+def clear_cache() -> None:
+    _HIT_BLEND_CACHE.clear()
+    _PITCH_BLEND_CACHE.clear()
+
+
+def _hit_blend(player_id: int) -> dict | None:
+    if player_id not in _HIT_BLEND_CACHE:
+        _HIT_BLEND_CACHE[player_id] = blend_hitting(stats_service.get_hitting_stats(player_id))
+    return _HIT_BLEND_CACHE[player_id]
+
+
+def _pitch_blend(player_id: int) -> tuple | None:
+    """Return (blended_dict, innings) or None, cached per player."""
+    if player_id not in _PITCH_BLEND_CACHE:
+        stats = stats_service.get_pitching_stats(player_id)
+        blended = blend_pitching(stats)
+        if blended:
+            innings = sum(s.get("innings", 0) for s in stats.values())
+            _PITCH_BLEND_CACHE[player_id] = (blended, innings)
+        else:
+            _PITCH_BLEND_CACHE[player_id] = None
+    return _PITCH_BLEND_CACHE[player_id]
+
+
+# ---- per-player scoring (does I/O via stats_service, cached) ----
 
 def _score_hitter(player_id: int, hit_weights: dict) -> float | None:
-    blended = blend_hitting(stats_service.get_hitting_stats(player_id))
+    blended = _hit_blend(player_id)
     if not blended:
         return None
     return _score_hitting_line(blended, hit_weights)
@@ -72,12 +104,27 @@ def _score_hitter(player_id: int, hit_weights: dict) -> float | None:
 
 def _score_pitcher(player_id: int, pitch_weights: dict):
     """Return (score, innings) or None if no stats."""
-    stats = stats_service.get_pitching_stats(player_id)
-    blended = blend_pitching(stats)
-    if not blended:
+    cached = _pitch_blend(player_id)
+    if not cached:
         return None
-    innings = sum(s.get("innings", 0) for s in stats.values())
+    blended, innings = cached
     return _score_pitching_line(blended, pitch_weights), innings
+
+
+def player_value(player: dict, weights: dict | None = None) -> dict:
+    """Score a single player on the model metrics (for trade comparisons).
+
+    Returns {kind, score} where kind is 'hitter' or 'pitcher'. score is the
+    player's contribution on the same scale the rating uses (None if no stats).
+    """
+    weights = weights or weights_store.load()
+    pid = player.get("id")
+    if player.get("position_type") == "Pitcher":
+        result = _score_pitcher(pid, weights["pitch_weights"]) if pid else None
+        score = result[0] if result else None
+        return {"kind": "pitcher", "score": round(score, 4) if score is not None else None}
+    score = _score_hitter(pid, weights["hit_weights"]) if pid else None
+    return {"kind": "hitter", "score": round(score, 4) if score is not None else None}
 
 
 def _active_hitters(roster: list[dict]) -> list[dict]:
