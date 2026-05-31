@@ -65,7 +65,7 @@ def _score_pitching_line(blended: dict, pitch_weights: dict) -> float:
 # Keyed by player_id. The blended stat line is what the slow API call produces;
 # scoring it against the weights is cheap, so we cache the blend and re-score
 # each time. Cleared when stats might be stale via clear_cache().
-_HIT_BLEND_CACHE: dict[int, dict | None] = {}
+_HIT_BLEND_CACHE: dict[int, tuple | None] = {}
 _PITCH_BLEND_CACHE: dict[int, tuple | None] = {}
 
 
@@ -74,9 +74,16 @@ def clear_cache() -> None:
     _PITCH_BLEND_CACHE.clear()
 
 
-def _hit_blend(player_id: int) -> dict | None:
+def _hit_blend(player_id: int) -> tuple | None:
+    """Return (blended_dict, plate_appearances) or None, cached per player."""
     if player_id not in _HIT_BLEND_CACHE:
-        _HIT_BLEND_CACHE[player_id] = blend_hitting(stats_service.get_hitting_stats(player_id))
+        stats = stats_service.get_hitting_stats(player_id)
+        blended = blend_hitting(stats)
+        if blended:
+            pa = sum(s.get("pa", 0) for s in stats.values())
+            _HIT_BLEND_CACHE[player_id] = (blended, pa)
+        else:
+            _HIT_BLEND_CACHE[player_id] = None
     return _HIT_BLEND_CACHE[player_id]
 
 
@@ -95,11 +102,13 @@ def _pitch_blend(player_id: int) -> tuple | None:
 
 # ---- per-player scoring (does I/O via stats_service, cached) ----
 
-def _score_hitter(player_id: int, hit_weights: dict) -> float | None:
-    blended = _hit_blend(player_id)
-    if not blended:
+def _score_hitter(player_id: int, hit_weights: dict):
+    """Return (score, plate_appearances) or None if no stats."""
+    cached = _hit_blend(player_id)
+    if not cached:
         return None
-    return _score_hitting_line(blended, hit_weights)
+    blended, pa = cached
+    return _score_hitting_line(blended, hit_weights), pa
 
 
 def _score_pitcher(player_id: int, pitch_weights: dict):
@@ -123,7 +132,8 @@ def player_value(player: dict, weights: dict | None = None) -> dict:
         result = _score_pitcher(pid, weights["pitch_weights"]) if pid else None
         score = result[0] if result else None
         return {"kind": "pitcher", "score": round(score, 4) if score is not None else None}
-    score = _score_hitter(pid, weights["hit_weights"]) if pid else None
+    result = _score_hitter(pid, weights["hit_weights"]) if pid else None
+    score = result[0] if result else None
     return {"kind": "hitter", "score": round(score, 4) if score is not None else None}
 
 
@@ -161,21 +171,23 @@ def rate_team(roster: list[dict], team_id: int = 0, weights: dict | None = None)
     bull_w = balance.get("bullpen_weight", 0.08)
     form_w = balance.get("recent_form_weight", 0.05)
 
-    # Offense — average score across active hitters.
-    hitter_scores = [
-        s for s in (_score_hitter(p["id"], hit_weights) for p in _active_hitters(roster))
-        if s is not None
+    # Offense — plate-appearance-weighted score across active hitters, so
+    # regulars/stars dominate and bench depth barely counts (this is what makes
+    # a single roster move actually register instead of being averaged away).
+    hitter_data = [
+        r for r in (_score_hitter(p["id"], hit_weights) for p in _active_hitters(roster))
+        if r is not None
     ]
-    offense = sum(hitter_scores) / max(len(hitter_scores), 1)
+    offense = _weighted_mean(hitter_data)
 
-    # Pitching — average score across the team's top rotation arms (by innings).
+    # Pitching — innings-weighted score across the team's top rotation arms.
     pitcher_results = [
         r for r in (_score_pitcher(p["id"], pitch_weights) for p in _pitchers(roster))
         if r is not None
     ]
     pitcher_results.sort(key=lambda r: r[1], reverse=True)  # most innings first
     rotation = pitcher_results[:ROTATION_SIZE]
-    pitching = sum(s for s, _ in rotation) / max(len(rotation), 1)
+    pitching = _weighted_mean(rotation)
 
     # Bullpen + form from the team (league-average when team_id unknown).
     bullpen_era = stats_service.get_bullpen_era(team_id) if team_id else LEAGUE_AVG_BULLPEN_ERA
@@ -198,10 +210,25 @@ def rate_team(roster: list[dict], team_id: int = 0, weights: dict | None = None)
             "bullpen_score": round(bullpen_score, 4),
             "bullpen_era": bullpen_era,
             "form": form,
-            "hitters_scored": len(hitter_scores),
+            "hitters_scored": len(hitter_data),
             "rotation_scored": len(rotation),
         },
     }
+
+
+def _weighted_mean(pairs: list[tuple]) -> float:
+    """Weighted average over [(score, weight), ...].
+
+    Falls back to a simple mean if all weights are 0 (e.g. early-season players
+    with no PA/IP yet), and to 0.0 on an empty list — so an unscored unit
+    contributes zero rather than blowing up the math.
+    """
+    if not pairs:
+        return 0.0
+    total_w = sum(w for _, w in pairs)
+    if total_w > 0:
+        return sum(s * w for s, w in pairs) / total_w
+    return sum(s for s, _ in pairs) / len(pairs)
 
 
 def _combine(offense, pitching, bullpen, form, off_w, pit_w, bull_w, form_w) -> float:

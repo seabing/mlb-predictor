@@ -229,6 +229,7 @@ class StatsService:
             "hr": hr,
             "k_pct": so / pa,
             "bb_pct": bb / pa,
+            "pa": pa,
             "weight": weight,
         }
 
