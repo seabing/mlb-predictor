@@ -48,7 +48,8 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        app_pw = os.getenv("APP_PASSWORD", "changeme")
+        # Empty APP_PASSWORD => no gate (login page is bypassed entirely).
+        app_pw = os.getenv("APP_PASSWORD", "")
         admin_pw = os.getenv("ADMIN_PASSWORD") or (app_pw + "-admin")
         data_dir = os.getenv("DATA_DIR", "data")
         return cls(

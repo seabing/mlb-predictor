@@ -38,6 +38,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
+        # Gate disabled: when APP_PASSWORD is unset/blank the app is fully open.
+        if not settings.app_password:
+            return await call_next(request)
+
         path = request.url.path
         if (
             path in PUBLIC_PATHS
@@ -119,8 +123,8 @@ async def identify(request: Request):
             return RedirectResponse(url="/?e=save", status_code=303)
         return JSONResponse({"error": "Bad request"}, status_code=400)
 
-    # Auth check
-    if request.cookies.get("auth_token") != settings.app_password:
+    # Auth check (skipped entirely when the gate is disabled).
+    if settings.app_password and request.cookies.get("auth_token") != settings.app_password:
         if is_form:
             # Redirect to login -- session has expired
             return RedirectResponse(url="/", status_code=303)
